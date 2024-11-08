@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
-import csurf from 'csurf';
+import { csrf } from 'csrf-csrf';
 import session from 'express-session';
 import cluster from 'cluster';
 import os from 'os';
@@ -13,26 +13,21 @@ import fs from 'fs';
 import securityMiddleware from './middlewares/security';
 import { redisClient,redisStore } from './config/redis';
 import connectToDatabase from './config/mongodb';
-// Load environment variables from .env file
+import { connectSocket } from './config/socketConnection';
 dotenv.config();
 
-// Create an instance of Express
 const app = express();
-
-// Apply security middleware
+const server = require('http').createServer(app);
+connectSocket(server)
 securityMiddleware(app);
 
-// Middleware: Prevent parameter pollution
 app.use(hpp());
 
-// Middleware: Logging with Morgan (logs requests to access.log)
 const accessLogStream = fs.createWriteStream(path.join(__dirname, '../logs/access.log'), { flags: 'a' });
 app.use(morgan('combined', { stream: accessLogStream }));
 
-// Middleware: Parsing cookies
 app.use(cookieParser(process.env.COOKIE_SECRET));
 
-// Middleware: Session management with Redis for fast and scalable session storage
 app.use(
   session({
     store: redisStore,
@@ -51,13 +46,13 @@ app.use(
 app.use(compression());
 
 // Middleware: CSRF protection to prevent cross-site request forgery attacks
-app.use(csurf({ cookie: true }));
+app.use(csrf({ cookie: { httpOnly: true, secure: true } }));
 
 // Middleware: JSON and URL-encoded body parsing
 app.use(express.json({ limit: '10kb' })); // Limit body size for security
 app.use(express.urlencoded({ extended: true }));
 
-connectToDatabase()
+// connectToDatabase()
 // Middleware: Error handling
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error(err.stack);
