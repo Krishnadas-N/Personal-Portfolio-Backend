@@ -9,6 +9,7 @@ interface Certification extends Document {
   credentialUrl?: string;
   description?: string;
   skillsGained: string[];
+  imageUrl?: string;
 }
 
 const certificationSchema = new Schema<Certification>({
@@ -20,6 +21,7 @@ const certificationSchema = new Schema<Certification>({
   credentialUrl: { type: String },
   description: { type: String },
   skillsGained: [{ type: String }],
+  imageUrl: { type: String },
 }, { timestamps: true });
 
 export default model<Certification>('Certification', certificationSchema);

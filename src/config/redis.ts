@@ -1,22 +1,14 @@
-// redisConfig.ts
-import Redis from 'ioredis';
-import dotenv from 'dotenv';
-import RedisStore from 'connect-redis';
+import {createClient} from 'redis';
+import session from 'express-session';
 
-dotenv.config();
-
-const redisClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
-const redisStore = new RedisStore({
-  client: redisClient,
-  ttl: 86400, // 1 day session expiration
+const redisClient = createClient({
+  password: process.env.REDIS_PASSWORD as string,
+  socket: {
+      host: process.env.REDIS_URL as string,
+      port: parseInt(process.env.REDIS_PORT as string)
+  }
 });
+redisClient.on('error', (err) => console.error('Redis error:', err));
 
-redisClient.on('connect', () => {
-  console.log('Connected to Redis');
-});
+export { redisClient };
 
-redisClient.on('error', (err) => {
-  // console.error('Redis error:', err);
-});
-
-export { redisClient, redisStore };

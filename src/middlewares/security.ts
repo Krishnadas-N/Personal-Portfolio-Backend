@@ -2,7 +2,7 @@ import express from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import xss from "xss";
-import csurf from "csurf";
+// import csurf from "csurf";
 import compression from "compression";
 import cors from "cors";
 import hpp from "hpp";
@@ -47,7 +47,7 @@ const securityMiddleware = (app: express.Application) => {
   app.use(limiter);
 
   // CSRF Protection
-  app.use(csurf({ cookie: true }));
+  // app.use(csurf({ cookie: true }));
 
   // XSS Protection Middleware
   app.use(xssSanitizer);
