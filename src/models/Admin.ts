@@ -1,22 +1,42 @@
-import { Schema, model, Document } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
+import bcrypt from 'bcryptjs';
 
 interface Admin extends Document {
-    username: string;
-    password: string;
-    email: string;
-    role: 'SuperAdmin' | 'Admin' | 'Editor';
-    permissions: string[];
-    lastLogin?: Date;
-  }
-  
-  const adminSchema = new Schema<Admin>({
+  username: string;
+  email: string;
+  password: string;
+  role: 'super_admin' | 'admin';
+  permissions: string[];
+  isActive: boolean;
+  lastLogin?: Date;
+  profileImage?: string;
+  comparePassword(candidatePassword: string): Promise<boolean>;
+}
+
+const AdminSchema: Schema = new Schema(
+  {
     username: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
     email: { type: String, required: true, unique: true },
-    role: { type: String, enum: ['SuperAdmin', 'Admin', 'Editor'], default: 'Admin' },
-    permissions: [{ type: String }],
+    password: { type: String, required: true },
+    role: { type: String, enum: ['super_admin', 'admin'], default: 'admin' },
+    permissions: { type: [String], default: [] },
+    isActive: { type: Boolean, default: true },
     lastLogin: { type: Date },
-  }, { timestamps: true });
-  
-  export default model<Admin>('Admin', adminSchema);
-  
+    profileImage: { type: String },
+  },
+  { timestamps: true }
+);
+
+// Hash password before saving
+AdminSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) return next();
+  this.password = await bcrypt.hash(this.password, 12);
+  next();
+});
+
+// Compare password method
+AdminSchema.methods.comparePassword = async function(candidatePassword: string): Promise<boolean> {
+  return bcrypt.compare(candidatePassword, this.password);
+};
+
+export default mongoose.model<Admin>("Admin", AdminSchema);

@@ -1,22 +1,38 @@
-import { Schema, model, Document } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 interface Testimonial extends Document {
-    name: string;
-    position?: string;
-    company?: string;
-    message: string;
-    date: Date;
-    rating?: number;
-  }
-  
-  const testimonialSchema = new Schema<Testimonial>({
-    name: { type: String, required: true },
-    position: { type: String },
-    company: { type: String },
-    message: { type: String, required: true },
-    date: { type: Date, default: Date.now },
-    rating: { type: Number, min: 1, max: 5 },
-  }, { timestamps: true });
-  
-  export default model<Testimonial>('Testimonial', testimonialSchema);
-  
+  clientName: string;
+  clientPosition: string;
+  clientCompany: string;
+  clientImage?: string;
+  content: string;
+  rating: number;
+  project?: Schema.Types.ObjectId;
+  isActive: boolean;
+  isFeatured: boolean;
+  clientEmail?: string;
+  clientLinkedIn?: string;
+  verified: boolean;
+  verifiedAt?: Date;
+}
+
+const TestimonialSchema: Schema = new Schema(
+  {
+    clientName: { type: String, required: true },
+    clientPosition: { type: String, required: true },
+    clientCompany: { type: String, required: true },
+    clientImage: { type: String },
+    content: { type: String, required: true },
+    rating: { type: Number, min: 1, max: 5, required: true },
+    project: { type: Schema.Types.ObjectId, ref: 'Project' },
+    isActive: { type: Boolean, default: true },
+    isFeatured: { type: Boolean, default: false },
+    clientEmail: { type: String },
+    clientLinkedIn: { type: String },
+    verified: { type: Boolean, default: false },
+    verifiedAt: { type: Date },
+  },
+  { timestamps: true }
+);
+
+export default mongoose.model<Testimonial>("Testimonial", TestimonialSchema);

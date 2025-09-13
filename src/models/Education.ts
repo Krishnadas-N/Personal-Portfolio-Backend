@@ -1,32 +1,38 @@
-import { Schema, model, Document } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 interface Education extends Document {
-      degree: string;
-      institution: string;
-      institutionLogo:string;
-      location: string;
-      startDate: Date;
-      endDate: Date;
-      grade: string;
-      activities: string[];
-      fieldOfStudy: string;
-      skills: string[];
-      description?: string;
-  }
-  
-  const educationSchema = new Schema<Education>({
-    degree: { type: String, required: true },
+  institution: string;
+  degree: string;
+  fieldOfStudy: string;
+  startDate: Date;
+  endDate?: Date;
+  gpa?: number;
+  description?: string;
+  activities?: string[];
+  achievements?: string[];
+  location?: string;
+  isCurrent: boolean;
+  logo?: string;
+  website?: string;
+}
+
+const EducationSchema: Schema = new Schema(
+  {
     institution: { type: String, required: true },
-    institutionLogo: { type: String, required: true },
-    location: { type: String },
+    degree: { type: String, required: true },
+    fieldOfStudy: { type: String, required: true },
     startDate: { type: Date, required: true },
     endDate: { type: Date },
-    grade: { type: String },
-    activities: [{ type: String }],
+    gpa: { type: Number },
     description: { type: String },
-    fieldOfStudy: { type: String, required: true },
-    skills: [{ type: String }],
-  }, { timestamps: true });
-  
-  export default model<Education>('Education', educationSchema);
-  
+    activities: { type: [String], default: [] },
+    achievements: { type: [String], default: [] },
+    location: { type: String },
+    isCurrent: { type: Boolean, default: false },
+    logo: { type: String },
+    website: { type: String },
+  },
+  { timestamps: true }
+);
+
+export default mongoose.model<Education>("Education", EducationSchema);

@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import bcrypt from 'bcryptjs';
 
 interface SocialLink {
   platform: string;
@@ -6,19 +7,22 @@ interface SocialLink {
   icon: string; 
 }
 
-interface Profile extends Document {
+interface User extends Document {
   name: string;
-  title: string;
-  about: string;
+  email: string;
+  password: string;
+  role: 'admin' | 'user';
+  isActive: boolean;
+  lastLogin?: Date;
   profileImage?: string;
-  resume?: string;
-  socialLinks: SocialLink[]; 
+  socialLinks: SocialLink[];
   skills: string[];
   languages: string[];
   interests: string[];
-  availability: string; // e.g., "Freelance", "Full-time", "Part-time"
+  availability: string;
   location?: string;
-  contactEmail?: string;
+  bio?: string;
+  comparePassword(candidatePassword: string): Promise<boolean>;
 }
 
 const SocialLinkSchema: Schema = new Schema({
@@ -27,23 +31,36 @@ const SocialLinkSchema: Schema = new Schema({
   icon: { type: String }, 
 });
 
-const ProfileSchema: Schema = new Schema(
+const UserSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
-    title: { type: String, required: true },
-    email:{type:String,  required: true}
-    about: { type: String, required: true },
+    email: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    role: { type: String, enum: ['admin', 'user'], default: 'user' },
+    isActive: { type: Boolean, default: true },
+    lastLogin: { type: Date },
     profileImage: { type: String },
-    resume: { type: String },
     socialLinks: { type: [SocialLinkSchema], default: [] }, 
     skills: { type: [String], default: [] },
     languages: { type: [String], default: [] },
     interests: { type: [String], default: [] },
-    availability: { type: String, required: true },
+    availability: { type: String, default: 'Available' },
     location: { type: String },
-    contactEmail: { type: String },
+    bio: { type: String },
   },
   { timestamps: true }
 );
 
-export default mongoose.model<Profile>("Profile", ProfileSchema);
+// Hash password before saving
+UserSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) return next();
+  this.password = await bcrypt.hash(this.password, 12);
+  next();
+});
+
+// Compare password method
+UserSchema.methods.comparePassword = async function(candidatePassword: string): Promise<boolean> {
+  return bcrypt.compare(candidatePassword, this.password);
+};
+
+export default mongoose.model<User>("User", UserSchema);

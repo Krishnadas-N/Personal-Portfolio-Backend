@@ -1,27 +1,38 @@
-import { Schema, model, Document } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 interface Certification extends Document {
-  title: string;
+  name: string;
   issuer: string;
   issueDate: Date;
-  expirationDate?: Date;
+  expiryDate?: Date;
   credentialId?: string;
   credentialUrl?: string;
+  skills: string[];
+  category: string;
+  level: 'beginner' | 'intermediate' | 'advanced' | 'expert';
+  verificationUrl?: string;
+  badgeImage?: string;
   description?: string;
-  skillsGained: string[];
-  imageUrl?: string;
+  isActive: boolean;
 }
 
-const certificationSchema = new Schema<Certification>({
-  title: { type: String, required: true },
-  issuer: { type: String, required: true },
-  issueDate: { type: Date, required: true },
-  expirationDate: { type: Date },
-  credentialId: { type: String },
-  credentialUrl: { type: String },
-  description: { type: String },
-  skillsGained: [{ type: String }],
-  imageUrl: { type: String },
-}, { timestamps: true });
+const CertificationSchema: Schema = new Schema(
+  {
+    name: { type: String, required: true },
+    issuer: { type: String, required: true },
+    issueDate: { type: Date, required: true },
+    expiryDate: { type: Date },
+    credentialId: { type: String },
+    credentialUrl: { type: String },
+    skills: { type: [String], default: [] },
+    category: { type: String, required: true },
+    level: { type: String, enum: ['beginner', 'intermediate', 'advanced', 'expert'], default: 'intermediate' },
+    verificationUrl: { type: String },
+    badgeImage: { type: String },
+    description: { type: String },
+    isActive: { type: Boolean, default: true },
+  },
+  { timestamps: true }
+);
 
-export default model<Certification>('Certification', certificationSchema);
+export default mongoose.model<Certification>("Certification", CertificationSchema);
