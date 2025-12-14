@@ -1,14 +1,22 @@
 import { Request, Response } from 'express';
 import Admin from '../models/Admin';
-import User from '../models/User';
 import Contact from '../models/Contact';
 import Project from '../models/Project';
 import Blog from '../models/Blog';
+import {
+  PortfolioAnalytics,
+  PortfolioSettings,
+  NewsletterSubscriber,
+  NewsletterCampaign,
+  PortfolioVisitor as Visitor,
+  PortfolioComment
+} from '../models';
+
 import { asyncHandler, AppError } from '../middlewares/errorHandler';
 import { generateToken } from '../middlewares/auth.middleware';
 
 // @desc    Admin login
-// @route   POST /api/admin/login
+// @route   POST /api/admin/auth/login
 // @access  Public
 export const adminLogin = asyncHandler(async (req: Request, res: Response) => {
   const { email, password } = req.body;
@@ -45,238 +53,208 @@ export const adminLogin = asyncHandler(async (req: Request, res: Response) => {
         id: admin._id,
         username: admin.username,
         email: admin.email,
-        role: admin.role
+        role: admin.role,
+        profileImage: admin.profileImage
       },
       token
     }
   });
 });
 
-// @desc    Get admin dashboard stats
+// @desc    Get comprehensive admin dashboard with all tracking details
 // @route   GET /api/admin/dashboard
 // @access  Private (Admin)
-export const getDashboardStats = asyncHandler(async (req: Request, res: Response) => {
+export const getAdminDashboard = asyncHandler(async (req: Request, res: Response) => {
   const [
-    totalUsers,
+    // Basic stats
     totalContacts,
     totalProjects,
     totalBlogs,
+    
+    // New portfolio stats
+    totalVisitors,
+    totalComments,
+    totalNewsletterSubscribers,
+    totalNewsletterCampaigns,
+    
+    // Recent activity
     recentContacts,
     recentProjects,
-    recentBlogs
+    recentBlogs,
+    recentVisitors,
+    recentComments,
+    
+    // Analytics data
+    todayAnalytics,
+    weeklyAnalytics,
+    monthlyAnalytics,
+    
+    // Top content
+    topProjects,
+    topBlogs,
+    topPages
   ] = await Promise.all([
-    User.countDocuments(),
+    // Basic counts
     Contact.countDocuments(),
     Project.countDocuments(),
     Blog.countDocuments(),
+    
+    // New portfolio counts
+    Visitor.countDocuments(),
+    PortfolioComment.countDocuments(),
+    NewsletterSubscriber.countDocuments({ status: 'subscribed' }),
+    NewsletterCampaign.countDocuments(),
+    
+    // Recent activity
     Contact.find().sort({ createdAt: -1 }).limit(5).select('name email subject status createdAt'),
-    Project.find().sort({ createdAt: -1 }).limit(5).select('title status createdAt'),
-    Blog.find().sort({ createdAt: -1 }).limit(5).select('title status createdAt')
+    Project.find().sort({ createdAt: -1 }).limit(5).select('title status createdAt viewsCount'),
+    Blog.find().sort({ createdAt: -1 }).limit(5).select('title status createdAt viewsCount'),
+    Visitor.find().sort({ lastVisit: -1 }).limit(10).select('ipAddress country city device landingPage lastVisit sessionDuration visitCount'),
+    PortfolioComment.find().sort({ createdAt: -1 }).limit(5).select('author content status createdAt'),
+    
+    // Analytics data
+    PortfolioAnalytics.findOne({ date: { $gte: new Date(new Date().setHours(0,0,0,0)) } }),
+    PortfolioAnalytics.find({ 
+      date: { 
+        $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        $lt: new Date()
+      }
+    }).sort({ date: -1 }),
+    PortfolioAnalytics.find({ 
+      date: { 
+        $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        $lt: new Date()
+      }
+    }).sort({ date: -1 }),
+    
+    // Top content
+    Project.find({ featured: true }).sort({ viewsCount: -1 }).limit(5).select('title viewsCount likes category'),
+    Blog.find({ status: 'published' }).sort({ viewsCount: -1 }).limit(5).select('title viewsCount likes category'),
+    PortfolioAnalytics.aggregate([
+      { $unwind: '$topPages' },
+      { $group: { _id: '$topPages.path', totalViews: { $sum: '$topPages.views' } } },
+      { $sort: { totalViews: -1 } },
+      { $limit: 5 }
+    ])
   ]);
 
-  // Get contact status stats
-  const contactStats = await Contact.aggregate([
-    {
-      $group: {
-        _id: '$status',
-        count: { $sum: 1 }
-      }
-    }
+  // Calculate growth metrics
+  const lastWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const lastMonth = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  
+  const [
+    lastWeekVisitors,
+    lastMonthVisitors,
+    lastWeekComments,
+    lastMonthComments
+  ] = await Promise.all([
+    Visitor.countDocuments({ firstVisit: { $gte: lastWeek } }),
+    Visitor.countDocuments({ firstVisit: { $gte: lastMonth } }),
+    PortfolioComment.countDocuments({ createdAt: { $gte: lastWeek } }),
+    PortfolioComment.countDocuments({ createdAt: { $gte: lastMonth } })
   ]);
 
-  // Get project status stats
-  const projectStats = await Project.aggregate([
-    {
-      $group: {
-        _id: '$status',
-        count: { $sum: 1 }
-      }
-    }
+  // Calculate visitor growth
+  const visitorGrowth = {
+    weekly: totalVisitors > 0 ? ((lastWeekVisitors / totalVisitors) * 100).toFixed(1) : '0',
+    monthly: totalVisitors > 0 ? ((lastMonthVisitors / totalVisitors) * 100).toFixed(1) : '0'
+  };
+
+  // Calculate comment growth
+  const commentGrowth = {
+    weekly: totalComments > 0 ? ((lastWeekComments / totalComments) * 100).toFixed(1) : '0',
+    monthly: totalComments > 0 ? ((lastMonthComments / totalComments) * 100).toFixed(1) : '0'
+  };
+
+  // Get device and country stats
+  const deviceStats = await Visitor.aggregate([
+    { $group: { _id: '$device.type', count: { $sum: 1 } } },
+    { $sort: { count: -1 } }
   ]);
 
-  // Get blog status stats
-  const blogStats = await Blog.aggregate([
-    {
-      $group: {
-        _id: '$status',
-        count: { $sum: 1 }
-      }
-    }
+  const countryStats = await Visitor.aggregate([
+    { $group: { _id: '$country', count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+    { $limit: 10 }
+  ]);
+
+  // Browser stats
+  const browserStats = await Visitor.aggregate([
+    { $group: { _id: '$browser', count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+    { $limit: 5 }
   ]);
 
   res.json({
     success: true,
     data: {
       overview: {
-        totalUsers,
         totalContacts,
         totalProjects,
-        totalBlogs
+        totalBlogs,
+        totalVisitors,
+        totalComments,
+        totalNewsletterSubscribers,
+        totalNewsletterCampaigns
       },
-      contactStats,
-      projectStats,
-      blogStats,
+      growth: {
+        visitors: visitorGrowth,
+        comments: commentGrowth
+      },
+      analytics: {
+        today: todayAnalytics,
+        weekly: weeklyAnalytics,
+        monthly: monthlyAnalytics
+      },
+      topContent: {
+        projects: topProjects,
+        blogs: topBlogs,
+        pages: topPages
+      },
+      demographics: {
+        devices: deviceStats,
+        countries: countryStats,
+        browsers: browserStats
+      },
       recent: {
         contacts: recentContacts,
         projects: recentProjects,
-        blogs: recentBlogs
+        blogs: recentBlogs,
+        visitors: recentVisitors,
+        comments: recentComments
       }
     }
   });
 });
 
-// @desc    Get all users
-// @route   GET /api/admin/users
-// @access  Private (Admin)
-export const getUsers = asyncHandler(async (req: Request, res: Response) => {
-  const { 
-    page = 1, 
-    limit = 10, 
-    role,
-    isActive,
-    search,
-    sort = 'createdAt',
-    order = 'desc'
-  } = req.query;
-
-  const query: any = {};
-
-  // Apply filters
-  if (role) query.role = role;
-  if (isActive !== undefined) query.isActive = isActive === 'true';
-  if (search) {
-    query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { email: { $regex: search, $options: 'i' } }
-    ];
-  }
-
-  // Calculate pagination
-  const skip = (Number(page) - 1) * Number(limit);
-
-  // Build sort object
-  const sortObj: any = {};
-  sortObj[sort as string] = order === 'desc' ? -1 : 1;
-
-  const users = await User.find(query)
-    .sort(sortObj)
-    .skip(skip)
-    .limit(Number(limit))
-    .select('-password');
-
-  const total = await User.countDocuments(query);
-
-  res.json({
-    success: true,
-    data: users,
-    pagination: {
-      current: Number(page),
-      pages: Math.ceil(total / Number(limit)),
-      total,
-      limit: Number(limit)
-    }
-  });
-});
-
-// @desc    Get single user
-// @route   GET /api/admin/users/:id
-// @access  Private (Admin)
-export const getUser = asyncHandler(async (req: Request, res: Response) => {
-  const user = await User.findById(req.params.id).select('-password');
-
-  if (!user) {
-    throw new AppError('User not found', 404);
-  }
-
-  res.json({
-    success: true,
-    data: user
-  });
-});
-
-// @desc    Update user
-// @route   PUT /api/admin/users/:id
-// @access  Private (Admin)
-export const updateUser = asyncHandler(async (req: Request, res: Response) => {
-  const user = await User.findById(req.params.id);
-
-  if (!user) {
-    throw new AppError('User not found', 404);
-  }
-
-  const updatedUser = await User.findByIdAndUpdate(
-    req.params.id,
-    req.body,
-    { new: true, runValidators: true }
-  ).select('-password');
-
-  res.json({
-    success: true,
-    message: 'User updated successfully',
-    data: updatedUser
-  });
-});
-
-// @desc    Delete user
-// @route   DELETE /api/admin/users/:id
-// @access  Private (Admin)
-export const deleteUser = asyncHandler(async (req: Request, res: Response) => {
-  const user = await User.findById(req.params.id);
-
-  if (!user) {
-    throw new AppError('User not found', 404);
-  }
-
-  await User.findByIdAndDelete(req.params.id);
-
-  res.json({
-    success: true,
-    message: 'User deleted successfully'
-  });
-});
-
-// @desc    Toggle user active status
-// @route   PATCH /api/admin/users/:id/toggle
-// @access  Private (Admin)
-export const toggleUserStatus = asyncHandler(async (req: Request, res: Response) => {
-  const user = await User.findById(req.params.id);
-
-  if (!user) {
-    throw new AppError('User not found', 404);
-  }
-
-  user.isActive = !user.isActive;
-  await user.save();
-
-  res.json({
-    success: true,
-    message: `User ${user.isActive ? 'activated' : 'deactivated'} successfully`,
-    data: user
-  });
-});
-
 // @desc    Get admin profile
-// @route   GET /api/admin/profile
+// @route   GET /api/admin/settings/profile
 // @access  Private (Admin)
 export const getAdminProfile = asyncHandler(async (req: Request, res: Response) => {
+  const admin = await Admin.findById((req as any).admin._id);
   res.json({
     success: true,
-    data: req.admin
+    data: admin
   });
 });
 
 // @desc    Update admin profile
-// @route   PUT /api/admin/profile
+// @route   PUT /api/admin/settings/profile
 // @access  Private (Admin)
 export const updateAdminProfile = asyncHandler(async (req: Request, res: Response) => {
-  const { username, email, profileImage } = req.body;
+  const { username, email, profileImage, bio, phone, timezone, language, notifications } = req.body;
 
   const updatedAdmin = await Admin.findByIdAndUpdate(
-    req.admin._id,
+    (req as any).admin._id,
     {
-      username: username || req.admin.username,
-      email: email || req.admin.email,
-      profileImage: profileImage || req.admin.profileImage,
+      username: username || (req as any).admin.username,
+      email: email || (req as any).admin.email,
+      profileImage: profileImage || (req as any).admin.profileImage,
+      bio: bio || (req as any).admin.bio,
+      phone: phone || (req as any).admin.phone,
+      timezone: timezone || (req as any).admin.timezone,
+      language: language || (req as any).admin.language,
+      notifications: notifications || (req as any).admin.notifications
     },
     { new: true, runValidators: true }
   ).select('-password');
@@ -289,13 +267,13 @@ export const updateAdminProfile = asyncHandler(async (req: Request, res: Respons
 });
 
 // @desc    Change admin password
-// @route   PUT /api/admin/change-password
+// @route   PUT /api/admin/settings/profile/password
 // @access  Private (Admin)
 export const changeAdminPassword = asyncHandler(async (req: Request, res: Response) => {
   const { currentPassword, newPassword } = req.body;
 
   // Get admin with password
-  const admin = await Admin.findById(req.admin._id).select('+password');
+  const admin = await Admin.findById((req as any).admin._id).select('+password');
 
   // Check current password
   const isCurrentPasswordValid = await admin!.comparePassword(currentPassword);
@@ -313,78 +291,349 @@ export const changeAdminPassword = asyncHandler(async (req: Request, res: Respon
   });
 });
 
-// @desc    Get system logs
-// @route   GET /api/admin/logs
-// @access  Private (Super Admin)
-export const getSystemLogs = asyncHandler(async (req: Request, res: Response) => {
-  // This would typically integrate with a logging service
-  // For now, we'll return a placeholder response
+// @desc    Get portfolio settings
+// @route   GET /api/admin/settings/portfolio
+// @access  Private (Admin)
+export const getPortfolioSettings = asyncHandler(async (req: Request, res: Response) => {
+  let settings = await PortfolioSettings.findOne();
+  
+  if (!settings) {
+    // Create default settings if none exist
+    settings = await PortfolioSettings.create({
+      siteName: "My Portfolio",
+      siteDescription: "A modern portfolio website",
+      siteKeywords: ["portfolio", "developer", "web development"],
+      theme: {
+        primaryColor: "#3B82F6",
+        secondaryColor: "#1E40AF",
+        accentColor: "#F59E0B",
+        fontFamily: "Inter",
+        darkMode: false
+      },
+      features: {
+        blog: true,
+        projects: true,
+        testimonials: true,
+        contact: true,
+        analytics: true,
+        chatBot: true,
+        newsletter: false
+      }
+    });
+  }
+
   res.json({
     success: true,
-    message: 'System logs endpoint - integrate with logging service',
-    data: []
+    data: settings
   });
 });
 
-// @desc    Get admin statistics
-// @route   GET /api/admin/stats
+// @desc    Update portfolio settings
+// @route   PUT /api/admin/settings/portfolio
 // @access  Private (Admin)
-export const getAdminStats = asyncHandler(async (req: Request, res: Response) => {
-  const [
-    userStats,
-    contactStats,
-    projectStats,
-    blogStats
-  ] = await Promise.all([
-    User.aggregate([
-      {
-        $group: {
-          _id: null,
-          total: { $sum: 1 },
-          active: { $sum: { $cond: ['$isActive', 1, 0] } },
-          admins: { $sum: { $cond: [{ $eq: ['$role', 'admin'] }, 1, 0] } }
-        }
+export const updatePortfolioSettings = asyncHandler(async (req: Request, res: Response) => {
+  const settings = await PortfolioSettings.findOneAndUpdate(
+    {},
+    req.body,
+    { new: true, upsert: true, runValidators: true }
+  );
+
+  res.json({
+    success: true,
+    message: 'Portfolio settings updated successfully',
+    data: settings
+  });
+});
+
+// @desc    Get analytics data
+// @route   GET /api/admin/analytics
+// @access  Private (Admin)
+export const getAnalytics = asyncHandler(async (req: Request, res: Response) => {
+  const { period = '30d', startDate, endDate } = req.query;
+  
+  let dateFilter: any = {};
+  
+  if (startDate && endDate) {
+    dateFilter = {
+      date: {
+        $gte: new Date(startDate as string),
+        $lte: new Date(endDate as string)
       }
-    ]),
-    Contact.aggregate([
-      {
-        $group: {
-          _id: null,
-          total: { $sum: 1 },
-          new: { $sum: { $cond: [{ $eq: ['$status', 'new'] }, 1, 0] } },
-          replied: { $sum: { $cond: [{ $eq: ['$status', 'replied'] }, 1, 0] } }
-        }
+    };
+  } else {
+    const days = period === '7d' ? 7 : period === '30d' ? 30 : 90;
+    dateFilter = {
+      date: {
+        $gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000)
       }
-    ]),
-    Project.aggregate([
-      {
-        $group: {
-          _id: null,
-          total: { $sum: 1 },
-          featured: { $sum: { $cond: ['$featured', 1, 0] } },
-          active: { $sum: { $cond: [{ $eq: ['$status', 'In Progress'] }, 1, 0] } }
-        }
+    };
+  }
+
+  const analytics = await PortfolioAnalytics.find(dateFilter).sort({ date: -1 });
+  
+  // Calculate aggregated metrics
+  const aggregatedMetrics = analytics.reduce((acc: any, data: any) => {
+    acc.totalPageViews += data.pageViews;
+    acc.totalUniqueVisitors += data.uniqueVisitors;
+    acc.totalBounceRate += data.bounceRate;
+    acc.totalSessionDuration += data.avgSessionDuration;
+    return acc;
+  }, {
+    totalPageViews: 0,
+    totalUniqueVisitors: 0,
+    totalBounceRate: 0,
+    totalSessionDuration: 0
+  });
+
+  const avgMetrics = {
+    avgPageViews: analytics.length > 0 ? aggregatedMetrics.totalPageViews / analytics.length : 0,
+    avgUniqueVisitors: analytics.length > 0 ? aggregatedMetrics.totalUniqueVisitors / analytics.length : 0,
+    avgBounceRate: analytics.length > 0 ? aggregatedMetrics.totalBounceRate / analytics.length : 0,
+    avgSessionDuration: analytics.length > 0 ? aggregatedMetrics.totalSessionDuration / analytics.length : 0
+  };
+
+  res.json({
+    success: true,
+    data: {
+      analytics,
+      metrics: avgMetrics,
+      period,
+      totalDays: analytics.length
+    }
+  });
+});
+
+// @desc    Get visitor insights
+// @route   GET /api/admin/visitors
+// @access  Private (Admin)
+export const getVisitorInsights = asyncHandler(async (req: Request, res: Response) => {
+  const { page = 1, limit = 20, country, device, isReturning } = req.query;
+  
+  const filter: any = {};
+  if (country) filter.country = country;
+  if (device) filter['device.type'] = device;
+  if (isReturning !== undefined) filter.isReturning = isReturning === 'true';
+
+  const visitors = await Visitor.find(filter)
+    .sort({ lastVisit: -1 })
+    .limit(parseInt(limit as string) * 1)
+    .skip((parseInt(page as string) - 1) * parseInt(limit as string))
+    .select('-userAgent');
+
+  const totalVisitors = await Visitor.countDocuments(filter);
+
+  // Get visitor statistics
+  const stats = await Visitor.aggregate([
+    {
+      $group: {
+        _id: null,
+        totalVisitors: { $sum: 1 },
+        returningVisitors: { $sum: { $cond: ['$isReturning', 1, 0] } },
+        avgSessionDuration: { $avg: '$sessionDuration' },
+        avgVisitCount: { $avg: '$visitCount' }
       }
-    ]),
-    Blog.aggregate([
-      {
-        $group: {
-          _id: null,
-          total: { $sum: 1 },
-          published: { $sum: { $cond: [{ $eq: ['$status', 'published'] }, 1, 0] } },
-          featured: { $sum: { $cond: ['$isFeatured', 1, 0] } }
-        }
-      }
-    ])
+    }
   ]);
 
   res.json({
     success: true,
     data: {
-      users: userStats[0] || {},
-      contacts: contactStats[0] || {},
-      projects: projectStats[0] || {},
-      blogs: blogStats[0] || {}
+      visitors,
+      pagination: {
+        current: parseInt(page as string),
+        pages: Math.ceil(totalVisitors / parseInt(limit as string)),
+        total: totalVisitors
+      },
+      stats: stats[0] || {
+        totalVisitors: 0,
+        returningVisitors: 0,
+        avgSessionDuration: 0,
+        avgVisitCount: 0
+      }
     }
   });
 });
+
+// @desc    Get newsletter subscribers
+// @route   GET /api/admin/newsletter/subscribers
+// @access  Private (Admin)
+export const getNewsletterSubscribers = asyncHandler(async (req: Request, res: Response) => {
+  const { page = 1, limit = 20, status, search } = req.query;
+  
+  const filter: any = {};
+  if (status) filter.status = status;
+  if (search) {
+    filter.$or = [
+      { email: { $regex: search, $options: 'i' } },
+      { firstName: { $regex: search, $options: 'i' } },
+      { lastName: { $regex: search, $options: 'i' } }
+    ];
+  }
+
+  const subscribers = await NewsletterSubscriber.find(filter)
+    .sort({ subscribedAt: -1 })
+    .limit(parseInt(limit as string) * 1)
+    .skip((parseInt(page as string) - 1) * parseInt(limit as string));
+
+  const totalSubscribers = await NewsletterSubscriber.countDocuments(filter);
+
+  // Get subscriber statistics
+  const stats = await NewsletterSubscriber.aggregate([
+    {
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      subscribers,
+      pagination: {
+        current: parseInt(page as string),
+        pages: Math.ceil(totalSubscribers / parseInt(limit as string)),
+        total: totalSubscribers
+      },
+      stats: stats.reduce((acc: Record<string, number>, stat: any) => {
+        acc[stat._id] = stat.count;
+        return acc;
+      }, {} as Record<string, number>)
+    }
+  });
+});
+
+// @desc    Get newsletter campaigns
+// @route   GET /api/admin/newsletter/campaigns
+// @access  Private (Admin)
+export const getNewsletterCampaigns = asyncHandler(async (req: Request, res: Response) => {
+  const { page = 1, limit = 20, status } = req.query;
+  
+  const filter: any = {};
+  if (status) filter.status = status;
+
+  const campaigns = await NewsletterCampaign.find(filter)
+    .sort({ createdAt: -1 })
+    .limit(parseInt(limit as string) * 1)
+    .skip((parseInt(page as string) - 1) * parseInt(limit as string));
+
+  const totalCampaigns = await NewsletterCampaign.countDocuments(filter);
+
+  res.json({
+    success: true,
+    data: {
+      campaigns,
+      pagination: {
+        current: parseInt(page as string),
+        pages: Math.ceil(totalCampaigns / parseInt(limit as string)),
+        total: totalCampaigns
+      }
+    }
+  });
+});
+
+// @desc    Get comments management
+// @route   GET /api/admin/comments
+// @access  Private (Admin)
+export const getCommentsManagement = asyncHandler(async (req: Request, res: Response) => {
+  const { page = 1, limit = 20, status, postType, postId } = req.query;
+  
+  const filter: any = {};
+  if (status) filter.status = status;
+  if (postType) filter.postType = postType;
+  if (postId) filter.postId = postId;
+
+  const comments = await PortfolioComment.find(filter)
+    .populate('postId', 'title')
+    .populate('parentComment', 'content')
+    .sort({ createdAt: -1 })
+    .limit(parseInt(limit as string) * 1)
+    .skip((parseInt(page as string) - 1) * parseInt(limit as string));
+
+  const totalComments = await PortfolioComment.countDocuments(filter);
+
+  // Get comment statistics
+  const stats = await PortfolioComment.aggregate([
+    {
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      comments,
+      pagination: {
+        current: parseInt(page as string),
+        pages: Math.ceil(totalComments / parseInt(limit as string)),
+        total: totalComments
+      },
+      stats: stats.reduce((acc: Record<string, number>, stat: any) => {
+        acc[stat._id] = stat.count;
+        return acc;
+      }, {} as Record<string, number>)
+    }
+  });
+});
+
+// @desc    Update comment status
+// @route   PATCH /api/admin/comments/:id/status
+// @access  Private (Admin)
+export const updateCommentStatus = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const comment = await PortfolioComment.findByIdAndUpdate(
+    id,
+    { status },
+    { new: true, runValidators: true }
+  );
+
+  if (!comment) {
+    throw new AppError('Comment not found', 404);
+  }
+
+  res.json({
+    success: true,
+    message: 'Comment status updated successfully',
+    data: comment
+  });
+});
+
+// @desc    Delete comment
+// @route   DELETE /api/admin/comments/:id
+// @access  Private (Admin)
+export const deleteComment = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  const comment = await PortfolioComment.findByIdAndDelete(id);
+
+  if (!comment) {
+    throw new AppError('Comment not found', 404);
+  }
+
+  res.json({
+    success: true,
+    message: 'Comment deleted successfully'
+  });
+});
+
+// @desc    Get system logs
+// @route   GET /api/admin/logs
+// @access  Private (Admin)
+export const getSystemLogs = asyncHandler(async (req: Request, res: Response) => {
+  // Placeholder implementation for system logs
+  // In a real application, you might read from a log file or a logs database collection
+  res.json({
+    success: true,
+    message: 'System logs retrieved',
+    data: []
+  });
+});
+
+// Legacy support for getAdminStats
+export const getAdminStats = getAdminDashboard;

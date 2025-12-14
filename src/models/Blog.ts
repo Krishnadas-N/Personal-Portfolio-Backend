@@ -47,13 +47,13 @@ const BlogSchema: Schema = new Schema(
 
 // Generate slug from title
 BlogSchema.pre('save', function(next) {
-  if (this.isModified('title') && !this.slug) {
-    this.slug = this.title
+  if (this.isModified('title') && !(this as any).slug) {
+    (this as any).slug = (this as any).title
       .toLowerCase()
       .replace(/[^a-z0-9 -]/g, '')
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-')
-      .trim('-');
+      .replace(/^-+|-+$/g, '');
   }
   next();
 });
@@ -62,8 +62,8 @@ BlogSchema.pre('save', function(next) {
 BlogSchema.pre('save', function(next) {
   if (this.isModified('content')) {
     const wordsPerMinute = 200;
-    const wordCount = this.content.split(/\s+/).length;
-    this.readingTime = Math.ceil(wordCount / wordsPerMinute);
+    const wordCount = (this as any).content.split(/\s+/).length;
+    (this as any).readingTime = Math.ceil(wordCount / wordsPerMinute);
   }
   next();
 });

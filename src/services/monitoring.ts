@@ -1,11 +1,20 @@
 import { Request, Response } from 'express';
 import { redisClient } from '../config/redis';
 import { logger, collectSystemMetrics, healthCheck } from '../utils/logger';
+import cluster from 'cluster';
 
 // Metrics collection service
 export class MetricsService {
   private static instance: MetricsService;
   private metricsInterval: NodeJS.Timeout | null = null;
+  private flushInterval: NodeJS.Timeout | null = null;
+  
+  // Local aggregation buffers
+  private localRequestCount: number = 0;
+  private localErrorCount: number = 0;
+  private localTotalResponseTime: number = 0;
+  private localResponseCount: number = 0;
+  private activeRequests: number = 0;
 
   private constructor() {}
 
@@ -22,16 +31,29 @@ export class MetricsService {
       clearInterval(this.metricsInterval);
     }
 
-    this.metricsInterval = setInterval(async () => {
-      try {
-        await collectSystemMetrics();
-        await this.collectApplicationMetrics();
-      } catch (error) {
-        logger.error('Metrics collection failed', error);
-      }
-    }, intervalMs);
+    // System metrics collection - ONLY in Primary or Single Process
+    // Workers should not collect system metrics to avoid redundancy and overwriting
+    if (cluster.isPrimary || !cluster.isWorker) {
+        this.metricsInterval = setInterval(async () => {
+        try {
+            await collectSystemMetrics();
+            // App metrics in primary might be limited if it doesn't handle requests
+            if (!cluster.isPrimary) {
+                 await this.collectApplicationMetrics();
+            }
+        } catch (error) {
+            logger.error('Metrics collection failed', error);
+        }
+        }, intervalMs);
+    }
 
-    logger.info('Metrics collection started', { interval: intervalMs });
+    // Flush local metrics to Redis frequently (every 5 seconds) - RUNS EVERYWHERE
+    if (this.flushInterval) {
+        clearInterval(this.flushInterval);
+    }
+    this.flushInterval = setInterval(() => this.flushMetrics(), 5000);
+
+    logger.info(`Metrics collection started in process ${process.pid}`, { interval: intervalMs });
   }
 
   // Stop metrics collection
@@ -39,7 +61,55 @@ export class MetricsService {
     if (this.metricsInterval) {
       clearInterval(this.metricsInterval);
       this.metricsInterval = null;
-      logger.info('Metrics collection stopped');
+    }
+    if (this.flushInterval) {
+        clearInterval(this.flushInterval);
+        this.flushInterval = null;
+    }
+    // Final flush
+    this.flushMetrics().catch(e => logger.error('Final flush failed', e));
+    logger.info('Metrics collection stopped');
+  }
+
+  private async flushMetrics(): Promise<void> {
+    if (this.localRequestCount === 0 && this.localErrorCount === 0 && this.localResponseCount === 0) {
+        return;
+    }
+
+    const requestsToAdd = this.localRequestCount;
+    const errorsToAdd = this.localErrorCount;
+    const responseTimeToAdd = this.localTotalResponseTime;
+    const responsesToAdd = this.localResponseCount;
+
+    // Reset local counters immediately
+    this.localRequestCount = 0;
+    this.localErrorCount = 0;
+    this.localTotalResponseTime = 0;
+    this.localResponseCount = 0;
+
+    try {
+        const pipeline = redisClient.multi();
+        if (requestsToAdd > 0) pipeline.incrBy('stats:total_requests', requestsToAdd);
+        if (errorsToAdd > 0) pipeline.incrBy('stats:error_requests', errorsToAdd);
+        await pipeline.exec();
+        
+        if (responsesToAdd > 0) {
+            // Update average response time (simplified approximation)
+            const currentAvgStr = await redisClient.get('stats:avg_response_time');
+            const currentTotalReqStr = await redisClient.get('stats:total_requests'); 
+            
+            const currentAvg = parseFloat(currentAvgStr || '0');
+            const currentCount = parseInt(currentTotalReqStr || '0') - requestsToAdd; 
+            
+            const oldTotalTime = currentAvg * currentCount;
+            const newAverage = (oldTotalTime + responseTimeToAdd) / (currentCount + responsesToAdd);
+            
+            if (!isNaN(newAverage)) {
+                await redisClient.set('stats:avg_response_time', newAverage.toString());
+            }
+        }
+    } catch (error) {
+        logger.error('Failed to flush metrics to Redis', error);
     }
   }
 
@@ -48,14 +118,20 @@ export class MetricsService {
     try {
       const metrics = {
         timestamp: Date.now(),
-        activeConnections: await this.getActiveConnections(),
+        activeConnections: this.activeRequests, // Use local active requests
         cacheStats: await this.getCacheStats(),
         databaseStats: await this.getDatabaseStats(),
         requestStats: await this.getRequestStats()
       };
 
-      await redisClient.setex('app:metrics', 300, JSON.stringify(metrics));
-      logger.debug('Application metrics collected', metrics);
+      // Note: If multiple workers run this, they overwrite. 
+      // Ideally, workers should publish to a channel or list.
+      // For now, we assume this runs mainly in non-clustered mode or we accept the race condition for "snapshot" stats.
+      // But we disabled it in Primary, so only workers run it. 
+      // If multiple workers, they still overwrite.
+      // Let's use a process-specific key if clustered.
+      const key = cluster.isWorker ? `app:metrics:${cluster.worker?.id}` : 'app:metrics';
+      await redisClient.set(key, JSON.stringify(metrics), { EX: 300 });
     } catch (error) {
       logger.error('Failed to collect application metrics', error);
     }
@@ -63,13 +139,8 @@ export class MetricsService {
 
   // Get active connections count
   private async getActiveConnections(): Promise<number> {
-    try {
-      const connections = await redisClient.get('app:connections');
-      return connections ? parseInt(connections) : 0;
-    } catch (error) {
-      logger.error('Failed to get active connections', error);
-      return 0;
-    }
+    // This is now just returning local active requests
+    return this.activeRequests;
   }
 
   // Get cache statistics
@@ -92,14 +163,16 @@ export class MetricsService {
   private async getDatabaseStats(): Promise<any> {
     try {
       const mongoose = require('mongoose');
-      const stats = await mongoose.connection.db.stats();
-      
-      return {
-        collections: stats.collections,
-        dataSize: stats.dataSize,
-        indexSize: stats.indexSize,
-        storageSize: stats.storageSize
-      };
+      if (mongoose.connection.readyState === 1) {
+        const stats = await mongoose.connection.db.stats();
+        return {
+            collections: stats.collections,
+            dataSize: stats.dataSize,
+            indexSize: stats.indexSize,
+            storageSize: stats.storageSize
+        };
+      }
+      return {};
     } catch (error) {
       logger.error('Failed to get database stats', error);
       return {};
@@ -137,39 +210,26 @@ export class MetricsService {
     return result;
   }
 
-  // Increment request counter
-  public async incrementRequestCounter(): Promise<void> {
-    try {
-      await redisClient.incr('stats:total_requests');
-    } catch (error) {
-      logger.error('Failed to increment request counter', error);
-    }
+  // Increment request counter locally
+  public incrementRequestCounter(): void {
+    this.localRequestCount++;
+    this.activeRequests++;
   }
 
-  // Increment error counter
-  public async incrementErrorCounter(): Promise<void> {
-    try {
-      await redisClient.incr('stats:error_requests');
-    } catch (error) {
-      logger.error('Failed to increment error counter', error);
-    }
+  // Decrement active requests (called on finish)
+  public decrementActiveRequests(): void {
+    this.activeRequests = Math.max(0, this.activeRequests - 1);
   }
 
-  // Update average response time
-  public async updateAvgResponseTime(responseTime: number): Promise<void> {
-    try {
-      const current = await redisClient.get('stats:avg_response_time');
-      const count = await redisClient.get('stats:total_requests');
-      
-      if (current && count) {
-        const avg = (parseFloat(current) * parseInt(count) + responseTime) / (parseInt(count) + 1);
-        await redisClient.set('stats:avg_response_time', avg.toString());
-      } else {
-        await redisClient.set('stats:avg_response_time', responseTime.toString());
-      }
-    } catch (error) {
-      logger.error('Failed to update average response time', error);
-    }
+  // Increment error counter locally
+  public incrementErrorCounter(): void {
+    this.localErrorCount++;
+  }
+
+  // Update average response time locally
+  public updateAvgResponseTime(responseTime: number): void {
+    this.localTotalResponseTime += responseTime;
+    this.localResponseCount++;
   }
 }
 
@@ -216,10 +276,10 @@ export class AlertService {
   // Check error rate
   private async checkErrorRate(): Promise<void> {
     try {
-      const totalRequests = await redisClient.get('stats:total_requests') || 0;
-      const errorRequests = await redisClient.get('stats:error_requests') || 0;
+      const totalRequests = await redisClient.get('stats:total_requests') || '0';
+      const errorRequests = await redisClient.get('stats:error_requests') || '0';
       
-      if (parseInt(totalRequests) > 0) {
+      if (parseInt(totalRequests) > 100) { // Minimum sample size
         const errorRate = (parseInt(errorRequests) / parseInt(totalRequests)) * 100;
         
         if (errorRate > 5) { // More than 5% error rate
@@ -238,7 +298,7 @@ export class AlertService {
   // Check response time
   private async checkResponseTime(): Promise<void> {
     try {
-      const avgResponseTime = await redisClient.get('stats:avg_response_time') || 0;
+      const avgResponseTime = await redisClient.get('stats:avg_response_time') || '0';
       
       if (parseFloat(avgResponseTime) > 2000) { // More than 2 seconds
         await this.sendAlert('slow_response_time', {
@@ -284,13 +344,13 @@ export class AlertService {
     }
 
     // Store alert
-    await redisClient.setex(`alert:${type}`, 300, Date.now().toString());
+    await redisClient.set(`alert:${type}`, Date.now().toString(), { EX: 300 });
     
     // Log alert
     logger.warn('Alert Triggered', { type, ...data });
     
     // Store alert in Redis for monitoring
-    await redisClient.lpush('alerts', JSON.stringify({
+    await redisClient.lPush('alerts', JSON.stringify({
       id: alertKey,
       type,
       data,
@@ -298,14 +358,14 @@ export class AlertService {
     }));
     
     // Keep only last 100 alerts
-    await redisClient.ltrim('alerts', 0, 99);
+    await redisClient.lTrim('alerts', 0, 99);
   }
 
   // Get recent alerts
   public async getRecentAlerts(limit: number = 10): Promise<any[]> {
     try {
-      const alerts = await redisClient.lrange('alerts', 0, limit - 1);
-      return alerts.map(alert => JSON.parse(alert));
+    const alerts = await redisClient.lRange('alerts', 0, limit - 1) as string[];
+    return alerts.map((alert: string) => JSON.parse(alert));
     } catch (error) {
       logger.error('Failed to get recent alerts', error);
       return [];
@@ -318,12 +378,15 @@ export const monitoringMiddleware = (req: Request, res: Response, next: any) => 
   const start = Date.now();
   const metricsService = MetricsService.getInstance();
   
-  // Increment request counter
+  // Increment request counter and active requests
   metricsService.incrementRequestCounter();
   
   res.on('finish', () => {
     const duration = Date.now() - start;
     
+    // Decrement active requests
+    metricsService.decrementActiveRequests();
+
     // Update average response time
     metricsService.updateAvgResponseTime(duration);
     
@@ -351,7 +414,7 @@ export const healthCheckEndpoint = async (req: Request, res: Response) => {
     res.status(503).json({
       success: false,
       message: 'Health check failed',
-      error: error.message
+      error: (error as Error).message
     });
   }
 };
@@ -360,6 +423,9 @@ export const healthCheckEndpoint = async (req: Request, res: Response) => {
 export const metricsEndpoint = async (req: Request, res: Response) => {
   try {
     const systemMetrics = await redisClient.get('system:metrics');
+    // Aggregate app metrics from all workers if needed, but for now just read basic one or current worker's
+    // Since we split keys, we might need to scan or just return basic.
+    // For simplicity, we'll try to get 'app:metrics' (from single mode) or just return what we have.
     const appMetrics = await redisClient.get('app:metrics');
     
     res.json({
@@ -375,7 +441,7 @@ export const metricsEndpoint = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Failed to retrieve metrics',
-      error: error.message
+      error: (error as Error).message
     });
   }
 };
@@ -395,7 +461,7 @@ export const alertsEndpoint = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Failed to retrieve alerts',
-      error: error.message
+      error: (error as Error).message
     });
   }
 };
@@ -408,12 +474,14 @@ export const initializeMonitoring = () => {
   // Start metrics collection
   metricsService.startMetricsCollection(60000); // Every minute
   
-  // Start alert checking
-  setInterval(() => {
-    alertService.checkAlerts();
-  }, 300000); // Every 5 minutes
+  // Start alert checking - only in primary ideally, but service handles it
+  if (cluster.isPrimary || !cluster.isWorker) {
+      setInterval(() => {
+        alertService.checkAlerts();
+      }, 300000); // Every 5 minutes
+  }
   
-  logger.info('Monitoring initialized');
+  // logger.info('Monitoring initialized'); // Already logged in startMetricsCollection
 };
 
 export default {

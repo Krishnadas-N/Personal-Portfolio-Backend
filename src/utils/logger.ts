@@ -134,7 +134,7 @@ export const collectSystemMetrics = async () => {
   
   // Store in Redis for monitoring
   if (process.env.ENABLE_MONITORING === 'true') {
-    await redisClient.setex('system:metrics', 300, JSON.stringify(metrics));
+    await redisClient.set('system:metrics', JSON.stringify(metrics), { EX: 300 });
   }
 
   return metrics;
@@ -222,7 +222,7 @@ export const getCachedData = async (key: string): Promise<any> => {
 
 export const setCachedData = async (key: string, data: any, ttl: number = 3600): Promise<void> => {
   try {
-    await redisClient.setex(key, ttl, JSON.stringify(data));
+    await redisClient.set(key, JSON.stringify(data), { EX: ttl });
   } catch (error) {
     logger.error('Cache set failed', { key, error });
   }
@@ -246,7 +246,7 @@ export const generateSlug = (text: string): string => {
     .replace(/[^a-z0-9 -]/g, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
-    .trim('-');
+    .replace(/^-+|-+$/g, '');
 };
 
 export const sanitizeInput = (input: string): string => {

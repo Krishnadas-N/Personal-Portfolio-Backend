@@ -9,6 +9,5 @@ export * from './skillsController';
 export * from './certificationController';
 export * from './testimonialController';
 export * from './adminController';
-export * from './adminDashboardController';
 export * from './mediaManagementController';
 export * from './userEngagementController';

@@ -1,11 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { redisClient } from '../config/redis';
+import config from '../config/environment';
 
 // Cache middleware
-export const cache = (duration: number = 300) => {
+export const cache = (duration: number = config.cache.shortTtl) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     // Only cache GET requests
-    if (req.method !== 'GET') {
+    if (req.method !== 'GET' || !config.cache.redisEnabled) {
       return next();
     }
 
@@ -25,7 +26,9 @@ export const cache = (duration: number = 300) => {
       // Override res.json to cache the response
       res.json = function(data: any) {
         // Cache the response
-        redisClient.setex(key, duration, JSON.stringify(data));
+        // Use v4 syntax: set(key, value, { EX: duration })
+        redisClient.set(key, JSON.stringify(data), { EX: duration })
+          .catch(err => console.error('Redis Cache Error', err));
         
         // Call original json method
         return originalJson.call(this, data);
@@ -43,17 +46,31 @@ export const cache = (duration: number = 300) => {
 export const invalidateCache = (pattern: string) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
+      if (!config.cache.redisEnabled) return next();
+
       // Invalidate cache after successful operations
       const originalJson = res.json;
       
       res.json = function(data: any) {
         // Only invalidate on successful responses
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          redisClient.keys(`cache:${pattern}`).then((keys) => {
-            if (keys.length > 0) {
-              redisClient.del(keys);
-            }
-          });
+          // Use scan to find keys avoiding blocking
+          (async () => {
+             try {
+                const matchPattern = `cache:${pattern}*`;
+                let cursor: number = 0;
+                do {
+                    const reply = await redisClient.scan(cursor as any, { MATCH: matchPattern, COUNT: 100 });
+                    cursor = typeof reply.cursor === 'string' ? parseInt(reply.cursor) : reply.cursor;
+                    const keys = reply.keys;
+                    if (keys.length > 0) {
+                        await redisClient.del(keys);
+                    }
+                } while (cursor !== 0);
+             } catch (e) {
+                 console.error('Cache invalidation failed', e);
+             }
+          })();
         }
         
         return originalJson.call(this, data);
@@ -69,20 +86,21 @@ export const invalidateCache = (pattern: string) => {
 
 // Specific cache patterns
 export const cachePatterns = {
-  projects: 'cache:/api/projects*',
-  blogs: 'cache:/api/blogs*',
-  skills: 'cache:/api/skills*',
-  experiences: 'cache:/api/experiences*',
-  education: 'cache:/api/education*',
-  certifications: 'cache:/api/certifications*',
-  testimonials: 'cache:/api/testimonials*',
-  profile: 'cache:/api/profile*',
+  projects: '/api/projects',
+  blogs: '/api/blogs',
+  skills: '/api/skills',
+  experiences: '/api/experiences',
+  education: '/api/education',
+  certifications: '/api/certifications',
+  testimonials: '/api/testimonials',
+  profile: '/api/profile',
 };
 
-// Cache duration constants
+// Cache duration constants - map to actual config property names
 export const cacheDurations = {
-  short: 300,    // 5 minutes
-  medium: 900,   // 15 minutes
-  long: 3600,    // 1 hour
-  veryLong: 86400, // 24 hours
+  short: config.cache.shortTtl,
+  medium: 900, // 15 minutes
+  long: config.cache.longTtl,
+  veryLong: config.cache.veryLongTtl,
+  default: config.cache.defaultTtl
 };

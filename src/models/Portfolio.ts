@@ -1,7 +1,7 @@
 import mongoose, { Document, Schema } from "mongoose";
 
 // Portfolio Analytics Model
-interface PortfolioAnalytics extends Document {
+export interface PortfolioAnalytics extends Document {
   date: Date;
   pageViews: number;
   uniqueVisitors: number;
@@ -54,7 +54,7 @@ const PortfolioAnalyticsSchema: Schema = new Schema({
 }, { timestamps: true });
 
 // Portfolio Settings Model
-interface PortfolioSettings extends Document {
+export interface PortfolioSettings extends Document {
   siteName: string;
   siteDescription: string;
   siteKeywords: string[];
@@ -151,7 +151,7 @@ const PortfolioSettingsSchema: Schema = new Schema({
 }, { timestamps: true });
 
 // Newsletter Subscriber Model
-interface NewsletterSubscriber extends Document {
+export interface NewsletterSubscriber extends Document {
   email: string;
   firstName?: string;
   lastName?: string;
@@ -186,7 +186,7 @@ const NewsletterSubscriberSchema: Schema = new Schema({
 }, { timestamps: true });
 
 // Newsletter Campaign Model
-interface NewsletterCampaign extends Document {
+export interface NewsletterCampaign extends Document {
   title: string;
   subject: string;
   content: string;
@@ -233,7 +233,7 @@ const NewsletterCampaignSchema: Schema = new Schema({
 }, { timestamps: true });
 
 // Portfolio Visitor Model
-interface PortfolioVisitor extends Document {
+export interface PortfolioVisitor extends Document {
   sessionId: string;
   ipAddress: string;
   userAgent: string;
@@ -276,7 +276,7 @@ const PortfolioVisitorSchema: Schema = new Schema({
 }, { timestamps: true });
 
 // Portfolio Comment Model
-interface PortfolioComment extends Document {
+export interface PortfolioComment extends Document {
   postId: Schema.Types.ObjectId;
   postType: 'blog' | 'project';
   author: {
@@ -315,7 +315,7 @@ const PortfolioCommentSchema: Schema = new Schema({
 }, { timestamps: true });
 
 // Portfolio Like Model
-interface PortfolioLike extends Document {
+export interface PortfolioLike extends Document {
   userId?: string;
   sessionId?: string;
   itemId: Schema.Types.ObjectId;

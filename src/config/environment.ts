@@ -1,3 +1,9 @@
+import dotenv from "dotenv";
+import path from "path";
+
+// Load environment variables from .env file
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+
 // Enhanced Environment Configuration
 export const config = {
   // Server Configuration
@@ -35,6 +41,13 @@ export const config = {
     s3BaseUrl: process.env.S3_BASE_URL || 'https://portfolio-assets.s3.amazonaws.com'
   },
 
+  // Cloudinary Configuration
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+    apiKey: process.env.CLOUDINARY_API_KEY || '',
+    apiSecret: process.env.CLOUDINARY_API_SECRET || ''
+  },
+
   // Email Configuration
   email: {
     smtpHost: process.env.SMTP_HOST || 'smtp.gmail.com',
@@ -56,9 +69,11 @@ export const config = {
 
   // Security Configuration
   security: {
-    corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    corsOrigins: process.env.CORS_ORIGINS 
+      ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
+      : ['http://localhost:3000'],
     rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes
-    rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || '100'),
+    rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || '1000'), // Increased from 100 to 1000 for better UX
     helmetEnabled: process.env.HELMET_ENABLED !== 'false',
     csrfEnabled: process.env.CSRF_ENABLED !== 'false',
     hppEnabled: process.env.HPP_ENABLED !== 'false',
@@ -95,6 +110,7 @@ export const config = {
 
   // File Upload Configuration
   upload: {
+    provider: (process.env.UPLOAD_PROVIDER || 's3') as 's3' | 'cloudinary',
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760'), // 10MB
     allowedImageTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'],
     allowedDocumentTypes: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
@@ -175,12 +191,22 @@ export const validateConfig = () => {
   }
 
   // Validate AWS configuration if S3 is being used
-  if (process.env.S3_BUCKET_NAME) {
+  if (config.upload.provider === 's3' && process.env.S3_BUCKET_NAME) {
     const awsRequiredVars = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION'];
     const missingAwsVars = awsRequiredVars.filter(varName => !process.env[varName]);
     
     if (missingAwsVars.length > 0) {
       console.warn('AWS S3 configuration incomplete:', missingAwsVars);
+    }
+  }
+
+  // Validate Cloudinary configuration if Cloudinary is being used
+  if (config.upload.provider === 'cloudinary') {
+    const cloudinaryRequiredVars = ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'];
+    const missingCloudinaryVars = cloudinaryRequiredVars.filter(varName => !process.env[varName]);
+    
+    if (missingCloudinaryVars.length > 0) {
+      console.warn('Cloudinary configuration incomplete:', missingCloudinaryVars);
     }
   }
 

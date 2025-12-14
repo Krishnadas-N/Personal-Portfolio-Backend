@@ -33,28 +33,33 @@ export const getProjects = asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Calculate pagination
-  const skip = (Number(page) - 1) * Number(limit);
+  const pageNum = Number(page);
+  const limitNum = Number(limit);
+  const skip = (pageNum - 1) * limitNum;
 
   // Build sort object
   const sortObj: any = {};
   sortObj[sort as string] = order === 'desc' ? -1 : 1;
 
-  const projects = await Project.find(query)
-    .sort(sortObj)
-    .skip(skip)
-    .limit(Number(limit))
-    .populate('relatedProjects', 'title images');
-
-  const total = await Project.countDocuments(query);
+  // Optimize: Use lean() and Promise.all
+  const [projects, total] = await Promise.all([
+    Project.find(query)
+      .sort(sortObj)
+      .skip(skip)
+      .limit(limitNum)
+      .populate('relatedProjects', 'title images')
+      .lean(), // Performance optimization
+    Project.countDocuments(query)
+  ]);
 
   res.json({
     success: true,
     data: projects,
     pagination: {
-      current: Number(page),
-      pages: Math.ceil(total / Number(limit)),
+      current: pageNum,
+      pages: Math.ceil(total / limitNum),
       total,
-      limit: Number(limit)
+      limit: limitNum
     }
   });
 });
@@ -64,16 +69,20 @@ export const getProjects = asyncHandler(async (req: Request, res: Response) => {
 // @access  Public
 export const getProject = asyncHandler(async (req: Request, res: Response) => {
   const project = await Project.findById(req.params.id)
-    .populate('relatedProjects', 'title images technologies');
+    .populate('relatedProjects', 'title images technologies'); // Removing .lean() here to allow save()
 
   if (!project || project.archived) {
     throw new AppError('Project not found', 404);
   }
 
-  // Increment view count
+  // Increment view count asynchronously
+  // Fire and forget or simple update without waiting if consistency isn't critical?
+  // But we want to persist it.
   project.viewsCount += 1;
   await project.save();
 
+  // If we wanted pure read speed, we could do findByIdAndUpdate and then return result, or separate
+  
   res.json({
     success: true,
     data: project
@@ -86,7 +95,7 @@ export const getProject = asyncHandler(async (req: Request, res: Response) => {
 export const createProject = asyncHandler(async (req: Request, res: Response) => {
   const projectData = {
     ...req.body,
-    lastUpdatedBy: req.user?.id || req.admin?.id
+    lastUpdatedBy: (req as any).user?.id || (req as any).admin?.id
   };
 
   const project = await Project.create(projectData);
@@ -112,7 +121,7 @@ export const updateProject = asyncHandler(async (req: Request, res: Response) =>
     req.params.id,
     {
       ...req.body,
-      lastUpdatedBy: req.user?.id || req.admin?.id
+      lastUpdatedBy: (req as any).user?.id || (req as any).admin?.id
     },
     { new: true, runValidators: true }
   );
@@ -153,7 +162,7 @@ export const archiveProject = asyncHandler(async (req: Request, res: Response) =
   }
 
   project.archived = true;
-  project.lastUpdatedBy = req.user?.id || req.admin?.id;
+  project.lastUpdatedBy = (req as any).user?.id || (req as any).admin?.id;
   await project.save();
 
   res.json({
@@ -167,14 +176,16 @@ export const archiveProject = asyncHandler(async (req: Request, res: Response) =
 // @route   POST /api/projects/:id/like
 // @access  Public
 export const likeProject = asyncHandler(async (req: Request, res: Response) => {
-  const project = await Project.findById(req.params.id);
+  // Optimization: atomic update
+  const project = await Project.findByIdAndUpdate(
+    req.params.id, 
+    { $inc: { likes: 1 } },
+    { new: true }
+  ).select('likes');
 
   if (!project) {
     throw new AppError('Project not found', 404);
   }
-
-  project.likes += 1;
-  await project.save();
 
   res.json({
     success: true,
@@ -195,7 +206,8 @@ export const getFeaturedProjects = asyncHandler(async (req: Request, res: Respon
   })
     .sort({ createdAt: -1 })
     .limit(Number(limit))
-    .select('title description images technologies projectType');
+    .select('title description images technologies projectType')
+    .lean(); // Optimization
 
   res.json({
     success: true,
@@ -215,7 +227,8 @@ export const getProjectsByTechnology = asyncHandler(async (req: Request, res: Re
     archived: { $ne: true }
   })
     .sort({ createdAt: -1 })
-    .limit(Number(limit));
+    .limit(Number(limit))
+    .lean();
 
   res.json({
     success: true,
@@ -227,31 +240,33 @@ export const getProjectsByTechnology = asyncHandler(async (req: Request, res: Re
 // @route   GET /api/projects/stats
 // @access  Private (Admin)
 export const getProjectStats = asyncHandler(async (req: Request, res: Response) => {
-  const stats = await Project.aggregate([
-    {
-      $group: {
-        _id: null,
-        totalProjects: { $sum: 1 },
-        totalViews: { $sum: '$viewsCount' },
-        totalLikes: { $sum: '$likes' },
-        featuredProjects: {
-          $sum: { $cond: ['$featured', 1, 0] }
-        },
-        activeProjects: {
-          $sum: { $cond: [{ $eq: ['$status', 'In Progress'] }, 1, 0] }
-        },
-        completedProjects: {
-          $sum: { $cond: [{ $eq: ['$status', 'Completed'] }, 1, 0] }
+  // Execute aggregations in parallel
+  const [stats, technologyStats] = await Promise.all([
+      Project.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalProjects: { $sum: 1 },
+            totalViews: { $sum: '$viewsCount' },
+            totalLikes: { $sum: '$likes' },
+            featuredProjects: {
+              $sum: { $cond: ['$featured', 1, 0] }
+            },
+            activeProjects: {
+              $sum: { $cond: [{ $eq: ['$status', 'In Progress'] }, 1, 0] }
+            },
+            completedProjects: {
+              $sum: { $cond: [{ $eq: ['$status', 'Completed'] }, 1, 0] }
+            }
+          }
         }
-      }
-    }
-  ]);
-
-  const technologyStats = await Project.aggregate([
-    { $unwind: '$technologies' },
-    { $group: { _id: '$technologies', count: { $sum: 1 } } },
-    { $sort: { count: -1 } },
-    { $limit: 10 }
+      ]),
+      Project.aggregate([
+        { $unwind: '$technologies' },
+        { $group: { _id: '$technologies', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 10 }
+      ])
   ]);
 
   res.json({

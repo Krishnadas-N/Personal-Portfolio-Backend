@@ -1,13 +1,20 @@
 import { Router } from 'express';
+import publicRoutes from './public';
 import adminRoutes from './admin';
-import userRoutes from './user';
-import apiRoutes from './apiRoutes';
+import authRoutes from './auth';
 
 const router = Router();
 
-// Mount route modules
-router.use('/', userRoutes);
+// ==================== PUBLIC ROUTES ====================
+// Portfolio, blogs, projects, engagement, newsletter, etc.
+router.use('/', publicRoutes);
+
+// ==================== USER AUTH ROUTES ====================
+// Register, login, me, change password, etc.
+router.use('/auth', authRoutes);
+
+// ==================== ADMIN ROUTES ====================
+// Dashboard, content management, media, settings, etc.
 router.use('/admin', adminRoutes);
-router.use('/api', apiRoutes);
 
 export default router;

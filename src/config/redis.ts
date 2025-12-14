@@ -1,14 +1,38 @@
-import {createClient} from 'redis';
-import session from 'express-session';
+import { createClient } from 'redis';
+import config from './environment';
+import { logger } from '../utils/logger';
+
+// Parse Redis URL to handle Redis Cloud properly
+const redisUrl = config.database.redisUri;
+const isRedisCloud = redisUrl.startsWith('rediss://'); // Redis Cloud uses TLS
 
 const redisClient = createClient({
-  password: process.env.REDIS_PASSWORD as string,
+  url: redisUrl,
   socket: {
-      host: process.env.REDIS_URL as string,
-      port: parseInt(process.env.REDIS_PORT as string)
+    // Enable TLS for Redis Cloud
+    tls: isRedisCloud,
+    // Reconnect strategy
+    reconnectStrategy: (retries) => {
+      if (retries > 20) {
+        logger.error('Redis: Max connection retries reached, giving up.');
+        return new Error('Redis connection failed');
+      }
+      return Math.min(retries * 50, 1000);
+    }
   }
 });
-redisClient.on('error', (err) => console.error('Redis error:', err));
+
+redisClient.on('error', (err) => logger.error('Redis Client Error:', err));
+redisClient.on('connect', () => logger.info('Redis Client Connected'));
+redisClient.on('ready', () => logger.info('Redis Client Ready'));
+
+// Connect immediately
+(async () => {
+  try {
+    await redisClient.connect();
+  } catch (err) {
+    logger.error('Failed to connect to Redis:', err);
+  }
+})();
 
 export { redisClient };
-

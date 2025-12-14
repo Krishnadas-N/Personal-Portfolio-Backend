@@ -69,7 +69,7 @@ export class VisitorAnalyticsService {
         analytics.pageViews += 1;
         
         // Update top pages
-        const existingPage = analytics.topPages.find(p => p.path === page);
+        const existingPage = analytics.topPages.find((p: any) => p.path === page);
         if (existingPage) {
           existingPage.views += 1;
         } else {
@@ -77,7 +77,7 @@ export class VisitorAnalyticsService {
         }
         
         // Sort and limit top pages
-        analytics.topPages.sort((a, b) => b.views - a.views);
+        analytics.topPages.sort((a: any, b: any) => b.views - a.views);
         analytics.topPages = analytics.topPages.slice(0, 10);
         
         await analytics.save();
@@ -136,31 +136,31 @@ export class VisitorAnalyticsService {
       ]);
 
       // Calculate metrics
-      const totalPageViews = analytics.reduce((sum, a) => sum + a.pageViews, 0);
-      const totalUniqueVisitors = analytics.reduce((sum, a) => sum + a.uniqueVisitors, 0);
+      const totalPageViews = analytics.reduce((sum: number, a: any) => sum + a.pageViews, 0);
+      const totalUniqueVisitors = analytics.reduce((sum: number, a: any) => sum + a.uniqueVisitors, 0);
       const avgBounceRate = analytics.length > 0 ? 
-        analytics.reduce((sum, a) => sum + a.bounceRate, 0) / analytics.length : 0;
+        analytics.reduce((sum: number, a: any) => sum + a.bounceRate, 0) / analytics.length : 0;
       const avgSessionDuration = analytics.length > 0 ?
-        analytics.reduce((sum, a) => sum + a.avgSessionDuration, 0) / analytics.length : 0;
+        analytics.reduce((sum: number, a: any) => sum + a.avgSessionDuration, 0) / analytics.length : 0;
 
       // Device breakdown
-      const deviceBreakdown = visitors.reduce((acc, visitor) => {
+      const deviceBreakdown = visitors.reduce((acc: Record<string, number>, visitor: any) => {
         const type = visitor.device?.type || 'unknown';
         acc[type] = (acc[type] || 0) + 1;
         return acc;
       }, {} as { [key: string]: number });
 
       // Country breakdown
-      const countryBreakdown = visitors.reduce((acc, visitor) => {
+      const countryBreakdown = visitors.reduce((acc: Record<string, number>, visitor: any) => {
         const country = visitor.country || 'unknown';
         acc[country] = (acc[country] || 0) + 1;
         return acc;
       }, {} as { [key: string]: number });
 
       // Top pages
-      const topPages = analytics.reduce((acc, dayAnalytics) => {
-        dayAnalytics.topPages.forEach(page => {
-          const existing = acc.find(p => p.path === page.path);
+      const topPages = analytics.reduce((acc: any[], dayAnalytics: any) => {
+        dayAnalytics.topPages.forEach((page: any) => {
+          const existing = acc.find((p: any) => p.path === page.path);
           if (existing) {
             existing.views += page.views;
           } else {
@@ -170,7 +170,7 @@ export class VisitorAnalyticsService {
         return acc;
       }, [] as any[]);
 
-      topPages.sort((a, b) => b.views - a.views);
+      topPages.sort((a: any, b: any) => b.views - a.views);
 
       return {
         period,
@@ -248,21 +248,21 @@ export class VisitorAnalyticsService {
       });
 
       // Calculate growth metrics
-      const totalPageViews = analytics.reduce((sum, a) => sum + a.pageViews, 0);
-      const totalUniqueVisitors = analytics.reduce((sum, a) => sum + a.uniqueVisitors, 0);
+      const totalPageViews = analytics.reduce((sum: number, a: any) => sum + a.pageViews, 0);
+      const totalUniqueVisitors = analytics.reduce((sum: number, a: any) => sum + a.uniqueVisitors, 0);
       const avgBounceRate = analytics.length > 0 ? 
-        analytics.reduce((sum, a) => sum + a.bounceRate, 0) / analytics.length : 0;
+        analytics.reduce((sum: number, a: any) => sum + a.bounceRate, 0) / analytics.length : 0;
       const avgSessionDuration = analytics.length > 0 ?
-        analytics.reduce((sum, a) => sum + a.avgSessionDuration, 0) / analytics.length : 0;
+        analytics.reduce((sum: number, a: any) => sum + a.avgSessionDuration, 0) / analytics.length : 0;
 
       // Engagement metrics
       const engagementRate = totalUniqueVisitors > 0 ? 
         ((comments.length + likes.length) / totalUniqueVisitors) * 100 : 0;
 
       // Top content
-      const topPages = analytics.reduce((acc, dayAnalytics) => {
-        dayAnalytics.topPages.forEach(page => {
-          const existing = acc.find(p => p.path === page.path);
+      const topPages = analytics.reduce((acc: any[], dayAnalytics: any) => {
+        dayAnalytics.topPages.forEach((page: any) => {
+          const existing = acc.find((p: any) => p.path === page.path);
           if (existing) {
             existing.views += page.views;
           } else {
@@ -272,7 +272,7 @@ export class VisitorAnalyticsService {
         return acc;
       }, [] as any[]);
 
-      topPages.sort((a, b) => b.views - a.views);
+      topPages.sort((a: any, b: any) => b.views - a.views);
 
       return {
         period: {
@@ -294,7 +294,7 @@ export class VisitorAnalyticsService {
         summary: {
           avgDailyPageViews: totalPageViews / analytics.length,
           avgDailyVisitors: totalUniqueVisitors / analytics.length,
-          peakDay: analytics.reduce((peak, day) => 
+          peakDay: analytics.reduce((peak: any, day: any) => 
             day.pageViews > peak.pageViews ? day : peak, analytics[0] || { pageViews: 0 })
         }
       };

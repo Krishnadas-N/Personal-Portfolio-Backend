@@ -1,3 +1,8 @@
+// MUST load environment variables FIRST before any other imports
+import dotenv from 'dotenv';
+import path from 'path';
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+
 import cluster from 'cluster';
 import os from 'os';
 import app from './app';
@@ -33,6 +38,9 @@ if (cluster.isPrimary) {
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 } else {
+  // Initialize monitoring in worker process (for local metrics flushing)
+  initializeMonitoring();
+
   const PORT = process.env.PORT || 5000;
   const server = app.listen(PORT, () => {
     logger.info(`Worker ${process.pid} is running on port ${PORT}`);

@@ -164,7 +164,8 @@ const options = {
       }
     ]
   },
-  apis: ['./src/routes/*.ts', './src/controllers/*.ts'],
+  // Include enhancedSwagger.ts in the apis list
+  apis: ['./src/routes/*.ts', './src/controllers/*.ts', './src/config/enhancedSwagger.ts'],
 };
 
 const specs = swaggerJsdoc(options);

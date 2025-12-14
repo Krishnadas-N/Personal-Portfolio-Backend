@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Model } from 'mongoose';
 import { asyncHandler, AppError } from '../middlewares/errorHandler';
 import {
   PortfolioVisitor,
@@ -113,7 +114,7 @@ export const toggleContentLike = asyncHandler(async (req: Request, res: Response
   }
 
   // Update likes count in the respective model
-  const Model = itemType === 'blog' ? Blog : itemType === 'project' ? Project : null;
+  const Model = (itemType === 'blog' ? Blog : itemType === 'project' ? Project : null) as Model<any> | null;
   
   if (Model) {
     const item = await Model.findById(itemId);
@@ -157,7 +158,7 @@ export const submitComment = asyncHandler(async (req: Request, res: Response) =>
   }
 
   // Verify post exists
-  const Model = postType === 'blog' ? Blog : Project;
+  const Model = (postType === 'blog' ? Blog : Project) as Model<any>;
   const post = await Model.findById(postId);
   
   if (!post) {
@@ -472,7 +473,7 @@ export const getRelatedContent = asyncHandler(async (req: Request, res: Response
     throw new AppError('Invalid content type', 400);
   }
 
-  const Model = type === 'blog' ? Blog : Project;
+  const Model = (type === 'blog' ? Blog : Project) as Model<any>;
   const item = await Model.findById(id);
 
   if (!item) {

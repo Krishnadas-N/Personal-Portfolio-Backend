@@ -3,16 +3,6 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User';
 import Admin from '../models/Admin';
 
-// Extend Request interface to include user
-declare global {
-  namespace Express {
-    interface Request {
-      user?: any;
-      admin?: any;
-    }
-  }
-}
-
 // JWT Authentication middleware
 export const authenticateToken = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -37,7 +27,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
       });
     }
 
-    req.user = user;
+    (req as any).user = user;
     next();
   } catch (error) {
     return res.status(403).json({
@@ -70,7 +60,7 @@ export const authenticateAdmin = async (req: Request, res: Response, next: NextF
       });
     }
 
-    req.admin = admin;
+    (req as any).admin = admin;
     next();
   } catch (error) {
     return res.status(403).json({
@@ -83,14 +73,14 @@ export const authenticateAdmin = async (req: Request, res: Response, next: NextF
 // Role-based authorization middleware
 export const authorize = (...roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user && !req.admin) {
+    if (!(req as any).user && !(req as any).admin) {
       return res.status(401).json({
         success: false,
         message: 'Authentication required'
       });
     }
 
-    const userRole = req.user?.role || req.admin?.role;
+    const userRole = (req as any).user?.role || (req as any).admin?.role;
     
     if (!roles.includes(userRole)) {
       return res.status(403).json({
@@ -106,14 +96,14 @@ export const authorize = (...roles: string[]) => {
 // Admin role authorization
 export const authorizeAdmin = (...adminRoles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.admin) {
+    if (!(req as any).admin) {
       return res.status(401).json({
         success: false,
         message: 'Admin authentication required'
       });
     }
 
-    if (!adminRoles.includes(req.admin.role)) {
+    if (!adminRoles.includes((req as any).admin.role)) {
       return res.status(403).json({
         success: false,
         message: 'Insufficient admin permissions'
@@ -134,7 +124,7 @@ export const optionalAuth = async (req: Request, res: Response, next: NextFuncti
       const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
       const user = await User.findById(decoded.userId).select('-password');
       if (user && user.isActive) {
-        req.user = user;
+        (req as any).user = user;
       }
     }
   } catch (error) {
@@ -145,8 +135,8 @@ export const optionalAuth = async (req: Request, res: Response, next: NextFuncti
 };
 
 // Generate JWT token
-export const generateToken = (payload: any, expiresIn: string = '7d') => {
-  return jwt.sign(payload, process.env.JWT_SECRET as string, { expiresIn: expiresIn });
+export const generateToken = (payload: any, expiresIn: string = '7d'): string => {
+  return jwt.sign(payload, process.env.JWT_SECRET as string, { expiresIn: expiresIn as any });
 };
 
 // Generate refresh token

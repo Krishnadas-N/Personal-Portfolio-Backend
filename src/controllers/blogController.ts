@@ -32,29 +32,34 @@ export const getBlogs = asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Calculate pagination
-  const skip = (Number(page) - 1) * Number(limit);
+  const pageNum = Number(page);
+  const limitNum = Number(limit);
+  const skip = (pageNum - 1) * limitNum;
 
   // Build sort object
   const sortObj: any = {};
   sortObj[sort as string] = order === 'desc' ? -1 : 1;
 
-  const blogs = await Blog.find(query)
-    .sort(sortObj)
-    .skip(skip)
-    .limit(Number(limit))
-    .populate('author', 'name email')
-    .populate('relatedPosts', 'title slug');
-
-  const total = await Blog.countDocuments(query);
+  // Optimized parallel queries + lean()
+  const [blogs, total] = await Promise.all([
+    Blog.find(query)
+        .sort(sortObj)
+        .skip(skip)
+        .limit(limitNum)
+        .populate('author', 'name email')
+        .populate('relatedPosts', 'title slug')
+        .lean(),
+    Blog.countDocuments(query)
+  ]);
 
   res.json({
     success: true,
     data: blogs,
     pagination: {
-      current: Number(page),
-      pages: Math.ceil(total / Number(limit)),
+      current: pageNum,
+      pages: Math.ceil(total / limitNum),
       total,
-      limit: Number(limit)
+      limit: limitNum
     }
   });
 });
@@ -71,7 +76,8 @@ export const getBlog = asyncHandler(async (req: Request, res: Response) => {
     throw new AppError('Blog post not found', 404);
   }
 
-  // Increment view count
+  // Increment view count (async, fire & forget usually safe for counters)
+  // For strict consistency, await.
   blog.viewsCount += 1;
   await blog.save();
 
@@ -87,7 +93,7 @@ export const getBlog = asyncHandler(async (req: Request, res: Response) => {
 export const createBlog = asyncHandler(async (req: Request, res: Response) => {
   const blogData = {
     ...req.body,
-    author: req.user?.id || req.admin?.id
+    author: (req as any).user?.id || (req as any).admin?.id
   };
 
   const blog = await Blog.create(blogData);
@@ -165,14 +171,16 @@ export const publishBlog = asyncHandler(async (req: Request, res: Response) => {
 // @route   POST /api/blogs/:id/like
 // @access  Public
 export const likeBlog = asyncHandler(async (req: Request, res: Response) => {
-  const blog = await Blog.findById(req.params.id);
+  // Optimization: Atomic update
+  const blog = await Blog.findByIdAndUpdate(
+      req.params.id,
+      { $inc: { likes: 1 } },
+      { new: true }
+  ).select('likes');
 
   if (!blog) {
     throw new AppError('Blog post not found', 404);
   }
-
-  blog.likes += 1;
-  await blog.save();
 
   res.json({
     success: true,
@@ -193,7 +201,8 @@ export const getFeaturedBlogs = asyncHandler(async (req: Request, res: Response)
   })
     .sort({ publishedAt: -1 })
     .limit(Number(limit))
-    .select('title excerpt slug featuredImage publishedAt readingTime');
+    .select('title excerpt slug featuredImage publishedAt readingTime')
+    .lean();
 
   res.json({
     success: true,
@@ -214,7 +223,8 @@ export const getBlogsByCategory = asyncHandler(async (req: Request, res: Respons
   })
     .sort({ publishedAt: -1 })
     .limit(Number(limit))
-    .select('title excerpt slug featuredImage publishedAt readingTime');
+    .select('title excerpt slug featuredImage publishedAt readingTime')
+    .lean();
 
   res.json({
     success: true,
@@ -242,31 +252,32 @@ export const getBlogCategories = asyncHandler(async (req: Request, res: Response
 // @route   GET /api/blogs/stats
 // @access  Private (Admin)
 export const getBlogStats = asyncHandler(async (req: Request, res: Response) => {
-  const stats = await Blog.aggregate([
-    {
-      $group: {
-        _id: null,
-        totalBlogs: { $sum: 1 },
-        publishedBlogs: {
-          $sum: { $cond: [{ $eq: ['$status', 'published'] }, 1, 0] }
-        },
-        draftBlogs: {
-          $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] }
-        },
-        totalViews: { $sum: '$viewsCount' },
-        totalLikes: { $sum: '$likes' },
-        featuredBlogs: {
-          $sum: { $cond: ['$isFeatured', 1, 0] }
+  const [stats, categoryStats] = await Promise.all([
+    Blog.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalBlogs: { $sum: 1 },
+            publishedBlogs: {
+              $sum: { $cond: [{ $eq: ['$status', 'published'] }, 1, 0] }
+            },
+            draftBlogs: {
+              $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] }
+            },
+            totalViews: { $sum: '$viewsCount' },
+            totalLikes: { $sum: '$likes' },
+            featuredBlogs: {
+              $sum: { $cond: ['$isFeatured', 1, 0] }
+            }
+          }
         }
-      }
-    }
-  ]);
-
-  const categoryStats = await Blog.aggregate([
-    { $match: { status: 'published' } },
-    { $group: { _id: '$category', count: { $sum: 1 } } },
-    { $sort: { count: -1 } },
-    { $limit: 10 }
+      ]),
+      Blog.aggregate([
+        { $match: { status: 'published' } },
+        { $group: { _id: '$category', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 10 }
+      ])
   ]);
 
   res.json({

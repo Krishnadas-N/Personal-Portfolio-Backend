@@ -1,5 +1,9 @@
-import express, { Application, RequestHandler } from 'express';
+// Load environment variables FIRST before any other imports
 import dotenv from 'dotenv';
+import path from 'path';
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+
+import express, { Application, RequestHandler } from 'express';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import session from 'express-session';
@@ -17,8 +21,6 @@ import RedisStore from "connect-redis";
 import config, { validateConfig } from './config/environment';
 import analyticsMiddleware from './middlewares/analyticsMiddleware';
 import CommunicationService from './services/communicationService';
-
-dotenv.config();
 
 // Validate configuration
 validateConfig();

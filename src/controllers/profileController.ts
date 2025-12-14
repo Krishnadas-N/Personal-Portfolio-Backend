@@ -150,7 +150,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 export const getMe = asyncHandler(async (req: Request, res: Response) => {
   res.json({
     success: true,
-    data: req.user
+    data: (req as any).user
   });
 });
 
@@ -161,16 +161,16 @@ export const updateMe = asyncHandler(async (req: Request, res: Response) => {
   const { name, bio, skills, languages, interests, availability, location, socialLinks } = req.body;
   
   const updatedUser = await User.findByIdAndUpdate(
-    req.user._id,
+    (req as any).user._id,
     {
-      name: name || req.user.name,
-      bio: bio || req.user.bio,
-      skills: skills || req.user.skills,
-      languages: languages || req.user.languages,
-      interests: interests || req.user.interests,
-      availability: availability || req.user.availability,
-      location: location || req.user.location,
-      socialLinks: socialLinks || req.user.socialLinks,
+      name: name || (req as any).user.name,
+      bio: bio || (req as any).user.bio,
+      skills: skills || (req as any).user.skills,
+      languages: languages || (req as any).user.languages,
+      interests: interests || (req as any).user.interests,
+      availability: availability || (req as any).user.availability,
+      location: location || (req as any).user.location,
+      socialLinks: socialLinks || (req as any).user.socialLinks,
     },
     { new: true, runValidators: true }
   ).select('-password');
@@ -189,7 +189,7 @@ export const changePassword = asyncHandler(async (req: Request, res: Response) =
   const { currentPassword, newPassword } = req.body;
 
   // Get user with password
-  const user = await User.findById(req.user._id).select('+password');
+  const user = await User.findById((req as any).user._id).select('+password');
 
   // Check current password
   const isCurrentPasswordValid = await user!.comparePassword(currentPassword);

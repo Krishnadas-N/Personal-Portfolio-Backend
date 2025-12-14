@@ -30,7 +30,7 @@ const AdminSchema: Schema = new Schema(
 // Hash password before saving
 AdminSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 12);
+  (this as any).password = await bcrypt.hash((this as any).password as string, 12);
   next();
 });
 
