@@ -15,57 +15,43 @@ import {
   MediaFile
 } from '../config/mediaStorage';
 
+const DEFAULT_FOLDER = 'portfolio-media';
+
 // @desc    Upload single image
 // @route   POST /api/admin/media/images
 // @access  Private (Admin)
 export const uploadSingleImage = asyncHandler(async (req: Request, res: Response) => {
-  const upload = uploadSingle('image', req.body.folder);
-  
+  const upload = uploadSingle('image');
+
   upload(req, res, async (err: any) => {
     if (err) {
       throw new AppError(`Upload failed: ${err.message}`, 400);
     }
-    
+
     if (!req.file) {
       throw new AppError('No file uploaded', 400);
     }
-    
+
     const file = req.file;
-    const folder = req.body.folder || 'images';
-    
+    const folder = req.body.folder || DEFAULT_FOLDER;
+
     // Generate key for the file
     // Note: If image, we use 'img' prefix (or based on folder)
-    const baseKey = generateUniqueFilename(file.originalname, file.mimetype.startsWith('image/') ? 'img' : folder);
-    
+    const baseKey = generateUniqueFilename(file.originalname);
+
     try {
       // 1. Upload Original File
       const originalUpload = await uploadFileToProvider(
-        file.buffer, 
-        baseKey, 
+        file.buffer,
+        baseKey,
         file.mimetype,
         folder
       );
-      
-      let processedData = undefined;
 
-      // 2. Process image if it's an image type
-      if (file.mimetype.startsWith('image/')) {
-        try {
-          const processedImages = await processImage(file.buffer, IMAGE_SIZES);
-          
-          const uploadedImages = await uploadProcessedImages(
-            processedImages,
-            baseKey,
-            folder
-          );
-          
-          processedData = uploadedImages;
-        } catch (processError) {
-          console.error('Image processing failed:', processError);
-          // Continue without processed images
-        }
-      }
-      
+      let processedData = undefined;
+      // Image processing removed as per user request to only upload original file
+
+
       res.json({
         success: true,
         message: processedData ? 'Image uploaded and processed successfully' : 'File uploaded successfully',
@@ -94,25 +80,25 @@ export const uploadSingleImage = asyncHandler(async (req: Request, res: Response
 // @route   POST /api/admin/media/images/batch
 // @access  Private (Admin)
 export const uploadMultipleImages = asyncHandler(async (req: Request, res: Response) => {
-  const upload = uploadMultiple('images', parseInt(req.body.maxCount) || 5, req.body.folder);
-  
+  const upload = uploadMultiple('images');
+
   upload(req, res, async (err: any) => {
     if (err) {
       throw new AppError(`Upload failed: ${err.message}`, 400);
     }
-    
+
     const files = req.files as Express.Multer.File[];
-    
+
     if (!files || files.length === 0) {
       throw new AppError('No files uploaded', 400);
     }
-    
-    const folder = req.body.folder || 'images';
+
+    const folder = req.body.folder || DEFAULT_FOLDER;
     const uploadResults = [];
-    
+
     for (const file of files) {
-      const baseKey = generateUniqueFilename(file.originalname, file.mimetype.startsWith('image/') ? 'img' : folder);
-      
+      const baseKey = generateUniqueFilename(file.originalname);
+
       try {
         // Upload Original
         const originalUpload = await uploadFileToProvider(
@@ -121,25 +107,11 @@ export const uploadMultipleImages = asyncHandler(async (req: Request, res: Respo
           file.mimetype,
           folder
         );
-        
-        let processedData = undefined;
 
-        if (file.mimetype.startsWith('image/')) {
-          try {
-            const processedImages = await processImage(file.buffer, IMAGE_SIZES);
-            
-            const uploadedImages = await uploadProcessedImages(
-              processedImages,
-              baseKey,
-              folder
-            );
-            
-            processedData = uploadedImages;
-          } catch (processError) {
-             console.error('Image processing failed for file:', file.originalname, processError);
-          }
-        }
-        
+        let processedData = undefined;
+        // Image processing removed
+
+
         uploadResults.push({
           original: {
             url: originalUpload.url,
@@ -162,7 +134,7 @@ export const uploadMultipleImages = asyncHandler(async (req: Request, res: Respo
         });
       }
     }
-    
+
     res.json({
       success: true,
       message: `${uploadResults.filter(r => !r.error).length} files uploaded successfully`,
@@ -180,25 +152,25 @@ export const uploadMixedFiles = asyncHandler(async (req: Request, res: Response)
     { name: 'documents', maxCount: 3 },
     { name: 'videos', maxCount: 2 }
   ];
-  
+
   const upload = uploadFields(fields);
-  
+
   upload(req, res, async (err: any) => {
     if (err) {
       throw new AppError(`Upload failed: ${err.message}`, 400);
     }
-    
+
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
     const results: any = {};
-    const folder = req.body.folder || 'mixed';
-    
+    const folder = req.body.folder || DEFAULT_FOLDER;
+
     // Process each file type
     for (const [fieldName, fileArray] of Object.entries(files)) {
       results[fieldName] = [];
-      
+
       for (const file of fileArray) {
-        const baseKey = generateUniqueFilename(file.originalname, fieldName === 'images' ? 'img' : folder);
-        
+        const baseKey = generateUniqueFilename(file.originalname);
+
         try {
           const originalUpload = await uploadFileToProvider(
             file.buffer,
@@ -206,25 +178,11 @@ export const uploadMixedFiles = asyncHandler(async (req: Request, res: Response)
             file.mimetype,
             folder
           );
-          
-          let processedData = undefined;
 
-          if (fieldName === 'images' && file.mimetype.startsWith('image/')) {
-            try {
-              const processedImages = await processImage(file.buffer, IMAGE_SIZES);
-              
-              const uploadedImages = await uploadProcessedImages(
-                processedImages,
-                baseKey,
-                folder
-              );
-              
-              processedData = uploadedImages;
-            } catch (processError) {
-               console.error('Image processing failed:', processError);
-            }
-          }
-          
+          let processedData = undefined;
+          // Image processing removed
+
+
           results[fieldName].push({
             original: {
               url: originalUpload.url,
@@ -241,13 +199,13 @@ export const uploadMixedFiles = asyncHandler(async (req: Request, res: Response)
         } catch (error) {
           console.error('File upload failed:', error);
           results[fieldName].push({
-             error: 'Upload failed',
-             originalname: file.originalname
+            error: 'Upload failed',
+            originalname: file.originalname
           });
         }
       }
     }
-    
+
     res.json({
       success: true,
       message: 'Files uploaded successfully',
@@ -261,13 +219,13 @@ export const uploadMixedFiles = asyncHandler(async (req: Request, res: Response)
 // @access  Private (Admin)
 export const deleteMediaFile = asyncHandler(async (req: Request, res: Response) => {
   const { key } = req.params;
-  
+
   if (!key) {
     throw new AppError('File key is required', 400);
   }
-  
+
   const deleted = await deleteFromS3(key); // deleteFromS3 is alias for deleteFromProvider
-  
+
   if (deleted) {
     res.json({
       success: true,
@@ -284,14 +242,14 @@ export const deleteMediaFile = asyncHandler(async (req: Request, res: Response) 
 export const getSignedUrlForFile = asyncHandler(async (req: Request, res: Response) => {
   const { key } = req.params;
   const { expiresIn } = req.query;
-  
+
   if (!key) {
     throw new AppError('File key is required', 400);
   }
-  
+
   const expires = expiresIn ? parseInt(expiresIn as string) : 3600;
   const signedUrl = await getSignedUrl(key, expires);
-  
+
   res.json({
     success: true,
     data: {
@@ -306,18 +264,36 @@ export const getSignedUrlForFile = asyncHandler(async (req: Request, res: Respon
 // @access  Private (Admin)
 export const listMediaFiles = asyncHandler(async (req: Request, res: Response) => {
   const { folder, prefix } = req.query;
-  
-  const searchPrefix = prefix || folder || '';
+
+  let baseFolder = (folder as string) || DEFAULT_FOLDER;
+  if (baseFolder.endsWith('/')) baseFolder = baseFolder.slice(0, -1);
+
+  const searchPrefix = prefix
+    ? `${baseFolder}/${prefix}`
+    : baseFolder;
+
   const files: MediaFile[] = await listFiles(searchPrefix as string);
-  
+
   res.json({
     success: true,
-    data: files.map(file => ({
-      key: file.Key,
-      size: file.Size,
-      lastModified: file.LastModified,
-      etag: file.ETag
-    }))
+    data: files.map(file => {
+      // Derive mimetype from extension for frontend utility
+      const extension = file.Key.split('.').pop()?.toLowerCase();
+      let type = 'unknown';
+      if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(extension || '')) type = 'image';
+      else if (['pdf', 'doc', 'docx'].includes(extension || '')) type = 'document';
+      else if (['mp4', 'webm', 'mov'].includes(extension || '')) type = 'video';
+
+      return {
+        key: file.Key,
+        url: file.url, // Cloud URL
+        size: file.Size,
+        lastModified: file.LastModified,
+        etag: file.ETag,
+        type,
+        extension
+      };
+    })
   });
 });
 
@@ -326,9 +302,10 @@ export const listMediaFiles = asyncHandler(async (req: Request, res: Response) =
 // @access  Private (Admin)
 export const getMediaStatistics = asyncHandler(async (req: Request, res: Response) => {
   const { folder } = req.query;
-  
-  const files: MediaFile[] = await listFiles(folder as string || '');
-  
+
+  const searchFolder = (folder as string) || DEFAULT_FOLDER;
+  const files: MediaFile[] = await listFiles(searchFolder);
+
   const stats = {
     totalFiles: files.length,
     totalSize: files.reduce((sum, file) => sum + (file.Size || 0), 0),
@@ -343,17 +320,17 @@ export const getMediaStatistics = asyncHandler(async (req: Request, res: Respons
         lastModified: file.LastModified
       }))
   };
-  
+
   // Categorize files by type and folder
   files.forEach(file => {
     const key = file.Key || '';
     const extension = key.split('.').pop()?.toLowerCase() || 'unknown';
     const folderName = key.split('/')[0] || 'root';
-    
+
     stats.byType[extension] = (stats.byType[extension] || 0) + 1;
     stats.byFolder[folderName] = (stats.byFolder[folderName] || 0) + 1;
   });
-  
+
   res.json({
     success: true,
     data: stats

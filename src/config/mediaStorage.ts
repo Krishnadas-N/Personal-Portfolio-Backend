@@ -60,7 +60,7 @@ const upload = multer({
     // If specific file type requested in body, use it, otherwise detect
     // Note: req.body might not be populated before file in multipart/form-data order, 
     // but usually checking mimetype is enough.
-    
+
     if (ALLOWED_IMAGE_TYPES.includes(file.mimetype)) {
       cb(null, true);
     } else if (ALLOWED_DOCUMENT_TYPES.includes(file.mimetype)) {
@@ -84,7 +84,7 @@ export const generateUniqueFilename = (originalName: string, prefix?: string) =>
   const randomString = Math.random().toString(36).substring(2, 15);
   const extension = originalName.split('.').pop();
   const baseName = originalName.split('.').slice(0, -1).join('.').replace(/[^a-zA-Z0-9]/g, '-');
-  
+
   return `${prefix ? prefix + '/' : ''}${timestamp}-${randomString}-${baseName}.${extension}`;
 };
 
@@ -92,17 +92,17 @@ export const generateUniqueFilename = (originalName: string, prefix?: string) =>
  * Upload a file buffer to the configured provider (S3 or Cloudinary)
  */
 export const uploadFileToProvider = async (
-  buffer: Buffer, 
-  key: string, 
+  buffer: Buffer,
+  key: string,
   mimetype: string,
   folder: string = 'uploads'
 ): Promise<{ url: string; key: string; provider: string }> => {
   const provider = config.upload.provider;
-  const fullKey = key.includes('/') ? key : `${folder}/${key}`;
+  const fullKey = key.includes('/') ? key : (folder ? `${folder}/${key}` : key);
 
   if (provider === 'cloudinary') {
     return new Promise((resolve, reject) => {
-      
+
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           folder: folder,
@@ -113,7 +113,7 @@ export const uploadFileToProvider = async (
         (error, result) => {
           if (error) return reject(error);
           if (!result) return reject(new Error('Cloudinary upload failed'));
-          
+
           resolve({
             url: result.secure_url,
             key: result.public_id, // Cloudinary public_id
@@ -121,7 +121,7 @@ export const uploadFileToProvider = async (
           });
         }
       );
-      
+
       streamifier.createReadStream(buffer).pipe(uploadStream);
     });
   } else {
@@ -183,8 +183,8 @@ export const getSignedUrl = async (key: string, expiresIn: number = 3600) => {
   const provider = config.upload.provider;
 
   if (provider === 'cloudinary') {
-    
-    return cloudinary.url(key, { 
+
+    return cloudinary.url(key, {
       secure: true,
       sign_url: true,
       type: 'authenticated', // Requires 'authenticated' type images
@@ -203,7 +203,7 @@ export const getSignedUrl = async (key: string, expiresIn: number = 3600) => {
 
 export const processImage = async (buffer: Buffer, sizes: typeof IMAGE_SIZES) => {
   const processedImages: { [key: string]: Buffer } = {};
-  
+
   for (const [sizeName, dimensions] of Object.entries(sizes)) {
     if (dimensions) {
       processedImages[sizeName] = await sharp(buffer)
@@ -219,7 +219,7 @@ export const processImage = async (buffer: Buffer, sizes: typeof IMAGE_SIZES) =>
         .toBuffer();
     }
   }
-  
+
   return processedImages;
 };
 
@@ -232,16 +232,16 @@ export const uploadProcessedImages = async (
     // Clean filename for S3/Cloudinary compatibility
     const cleanBaseKey = baseKey.replace(/\.[^/.]+$/, ""); // Remove extension
     const key = `${cleanBaseKey}-${size}.jpg`;
-    
+
     const result = await uploadFileToProvider(buffer, key, 'image/jpeg', folder);
-    
-    return { 
-      size, 
-      url: result.url, 
-      key: result.key 
+
+    return {
+      size,
+      url: result.url,
+      key: result.key
     };
   });
-  
+
   return Promise.all(uploadPromises);
 };
 
@@ -263,7 +263,7 @@ export const uploadFields = (fields: { name: string; maxCount: number }[]) => {
 // List files (Provider specific)
 export const listFiles = async (prefix: string): Promise<MediaFile[]> => {
   const provider = config.upload.provider;
-  
+
   if (provider === 'cloudinary') {
     // List resources from Cloudinary
     try {
@@ -272,7 +272,7 @@ export const listFiles = async (prefix: string): Promise<MediaFile[]> => {
         prefix: prefix, // Cloudinary uses folder as prefix
         max_results: 100
       });
-      
+
       return result.resources.map((res: any) => ({
         Key: res.public_id,
         Size: res.bytes,
@@ -289,9 +289,9 @@ export const listFiles = async (prefix: string): Promise<MediaFile[]> => {
       Bucket: BUCKET_NAME,
       Prefix: prefix
     });
-    
+
     const result = await s3.send(command);
-    
+
     // Normalize S3 result to MediaFile
     return (result.Contents || []).map(item => ({
       Key: item.Key || '',
@@ -303,11 +303,11 @@ export const listFiles = async (prefix: string): Promise<MediaFile[]> => {
   }
 };
 
-export { 
-  s3, 
-  BUCKET_NAME, 
-  BUCKET_REGION, 
-  IMAGE_SIZES, 
+export {
+  s3,
+  BUCKET_NAME,
+  BUCKET_REGION,
+  IMAGE_SIZES,
   // Export alias for compatibility
   deleteFromProvider as deleteFromS3,
   getSignedUrl as getSignedUrlForS3
