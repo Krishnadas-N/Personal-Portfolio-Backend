@@ -243,19 +243,13 @@ export const getAdminProfile = asyncHandler(async (req: Request, res: Response) 
 // @route   PUT /api/admin/settings/profile
 // @access  Private (Admin)
 export const updateAdminProfile = asyncHandler(async (req: Request, res: Response) => {
-  const { username, email, profileImage, bio, phone, timezone, language, notifications } = req.body;
+  const { username, profileImage } = req.body;
 
   const updatedAdmin = await Admin.findByIdAndUpdate(
     (req as any).admin._id,
     {
       username: username || (req as any).admin.username,
-      email: email || (req as any).admin.email,
       profileImage: profileImage || (req as any).admin.profileImage,
-      bio: bio || (req as any).admin.bio,
-      phone: phone || (req as any).admin.phone,
-      timezone: timezone || (req as any).admin.timezone,
-      language: language || (req as any).admin.language,
-      notifications: notifications || (req as any).admin.notifications
     },
     { new: true, runValidators: true }
   ).select('-password');
