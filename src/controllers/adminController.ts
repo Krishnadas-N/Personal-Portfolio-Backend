@@ -14,6 +14,7 @@ import {
 
 import { asyncHandler, AppError } from '../middlewares/errorHandler';
 import { generateToken } from '../middlewares/auth.middleware';
+import { getLogs } from '../utils/logger';
 
 // @desc    Admin login
 // @route   POST /api/admin/auth/login
@@ -70,25 +71,25 @@ export const getAdminDashboard = asyncHandler(async (req: Request, res: Response
     totalContacts,
     totalProjects,
     totalBlogs,
-    
+
     // New portfolio stats
     totalVisitors,
     totalComments,
     totalNewsletterSubscribers,
     totalNewsletterCampaigns,
-    
+
     // Recent activity
     recentContacts,
     recentProjects,
     recentBlogs,
     recentVisitors,
     recentComments,
-    
+
     // Analytics data
     todayAnalytics,
     weeklyAnalytics,
     monthlyAnalytics,
-    
+
     // Top content
     topProjects,
     topBlogs,
@@ -98,35 +99,35 @@ export const getAdminDashboard = asyncHandler(async (req: Request, res: Response
     Contact.countDocuments(),
     Project.countDocuments(),
     Blog.countDocuments(),
-    
+
     // New portfolio counts
     Visitor.countDocuments(),
     PortfolioComment.countDocuments(),
     NewsletterSubscriber.countDocuments({ status: 'subscribed' }),
     NewsletterCampaign.countDocuments(),
-    
+
     // Recent activity
     Contact.find().sort({ createdAt: -1 }).limit(5).select('name email subject status createdAt'),
     Project.find().sort({ createdAt: -1 }).limit(5).select('title status createdAt viewsCount'),
     Blog.find().sort({ createdAt: -1 }).limit(5).select('title status createdAt viewsCount'),
     Visitor.find().sort({ lastVisit: -1 }).limit(10).select('ipAddress country city device landingPage lastVisit sessionDuration visitCount'),
     PortfolioComment.find().sort({ createdAt: -1 }).limit(5).select('author content status createdAt'),
-    
+
     // Analytics data
-    PortfolioAnalytics.findOne({ date: { $gte: new Date(new Date().setHours(0,0,0,0)) } }),
-    PortfolioAnalytics.find({ 
-      date: { 
+    PortfolioAnalytics.findOne({ date: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) } }),
+    PortfolioAnalytics.find({
+      date: {
         $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
         $lt: new Date()
       }
     }).sort({ date: -1 }),
-    PortfolioAnalytics.find({ 
-      date: { 
+    PortfolioAnalytics.find({
+      date: {
         $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
         $lt: new Date()
       }
     }).sort({ date: -1 }),
-    
+
     // Top content
     Project.find({ featured: true }).sort({ viewsCount: -1 }).limit(5).select('title viewsCount likes category'),
     Blog.find({ status: 'published' }).sort({ viewsCount: -1 }).limit(5).select('title viewsCount likes category'),
@@ -141,7 +142,7 @@ export const getAdminDashboard = asyncHandler(async (req: Request, res: Response
   // Calculate growth metrics
   const lastWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const lastMonth = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  
+
   const [
     lastWeekVisitors,
     lastMonthVisitors,
@@ -231,7 +232,7 @@ export const getAdminDashboard = asyncHandler(async (req: Request, res: Response
 // @route   GET /api/admin/settings/profile
 // @access  Private (Admin)
 export const getAdminProfile = asyncHandler(async (req: Request, res: Response) => {
-  const admin = await Admin.findById((req as any).admin._id);
+  const admin = await Admin.findById((req as any).admin._id).select('-password');
   res.json({
     success: true,
     data: admin
@@ -296,7 +297,7 @@ export const changeAdminPassword = asyncHandler(async (req: Request, res: Respon
 // @access  Private (Admin)
 export const getPortfolioSettings = asyncHandler(async (req: Request, res: Response) => {
   let settings = await PortfolioSettings.findOne();
-  
+
   if (!settings) {
     // Create default settings if none exist
     settings = await PortfolioSettings.create({
@@ -350,9 +351,9 @@ export const updatePortfolioSettings = asyncHandler(async (req: Request, res: Re
 // @access  Private (Admin)
 export const getAnalytics = asyncHandler(async (req: Request, res: Response) => {
   const { period = '30d', startDate, endDate } = req.query;
-  
+
   let dateFilter: any = {};
-  
+
   if (startDate && endDate) {
     dateFilter = {
       date: {
@@ -370,7 +371,7 @@ export const getAnalytics = asyncHandler(async (req: Request, res: Response) => 
   }
 
   const analytics = await PortfolioAnalytics.find(dateFilter).sort({ date: -1 });
-  
+
   // Calculate aggregated metrics
   const aggregatedMetrics = analytics.reduce((acc: any, data: any) => {
     acc.totalPageViews += data.pageViews;
@@ -408,7 +409,7 @@ export const getAnalytics = asyncHandler(async (req: Request, res: Response) => 
 // @access  Private (Admin)
 export const getVisitorInsights = asyncHandler(async (req: Request, res: Response) => {
   const { page = 1, limit = 20, country, device, isReturning } = req.query;
-  
+
   const filter: any = {};
   if (country) filter.country = country;
   if (device) filter['device.type'] = device;
@@ -454,91 +455,14 @@ export const getVisitorInsights = asyncHandler(async (req: Request, res: Respons
   });
 });
 
-// @desc    Get newsletter subscribers
-// @route   GET /api/admin/newsletter/subscribers
-// @access  Private (Admin)
-export const getNewsletterSubscribers = asyncHandler(async (req: Request, res: Response) => {
-  const { page = 1, limit = 20, status, search } = req.query;
-  
-  const filter: any = {};
-  if (status) filter.status = status;
-  if (search) {
-    filter.$or = [
-      { email: { $regex: search, $options: 'i' } },
-      { firstName: { $regex: search, $options: 'i' } },
-      { lastName: { $regex: search, $options: 'i' } }
-    ];
-  }
 
-  const subscribers = await NewsletterSubscriber.find(filter)
-    .sort({ subscribedAt: -1 })
-    .limit(parseInt(limit as string) * 1)
-    .skip((parseInt(page as string) - 1) * parseInt(limit as string));
-
-  const totalSubscribers = await NewsletterSubscriber.countDocuments(filter);
-
-  // Get subscriber statistics
-  const stats = await NewsletterSubscriber.aggregate([
-    {
-      $group: {
-        _id: '$status',
-        count: { $sum: 1 }
-      }
-    }
-  ]);
-
-  res.json({
-    success: true,
-    data: {
-      subscribers,
-      pagination: {
-        current: parseInt(page as string),
-        pages: Math.ceil(totalSubscribers / parseInt(limit as string)),
-        total: totalSubscribers
-      },
-      stats: stats.reduce((acc: Record<string, number>, stat: any) => {
-        acc[stat._id] = stat.count;
-        return acc;
-      }, {} as Record<string, number>)
-    }
-  });
-});
-
-// @desc    Get newsletter campaigns
-// @route   GET /api/admin/newsletter/campaigns
-// @access  Private (Admin)
-export const getNewsletterCampaigns = asyncHandler(async (req: Request, res: Response) => {
-  const { page = 1, limit = 20, status } = req.query;
-  
-  const filter: any = {};
-  if (status) filter.status = status;
-
-  const campaigns = await NewsletterCampaign.find(filter)
-    .sort({ createdAt: -1 })
-    .limit(parseInt(limit as string) * 1)
-    .skip((parseInt(page as string) - 1) * parseInt(limit as string));
-
-  const totalCampaigns = await NewsletterCampaign.countDocuments(filter);
-
-  res.json({
-    success: true,
-    data: {
-      campaigns,
-      pagination: {
-        current: parseInt(page as string),
-        pages: Math.ceil(totalCampaigns / parseInt(limit as string)),
-        total: totalCampaigns
-      }
-    }
-  });
-});
 
 // @desc    Get comments management
 // @route   GET /api/admin/comments
 // @access  Private (Admin)
 export const getCommentsManagement = asyncHandler(async (req: Request, res: Response) => {
   const { page = 1, limit = 20, status, postType, postId } = req.query;
-  
+
   const filter: any = {};
   if (status) filter.status = status;
   if (postType) filter.postType = postType;
@@ -626,12 +550,33 @@ export const deleteComment = asyncHandler(async (req: Request, res: Response) =>
 // @route   GET /api/admin/logs
 // @access  Private (Admin)
 export const getSystemLogs = asyncHandler(async (req: Request, res: Response) => {
-  // Placeholder implementation for system logs
-  // In a real application, you might read from a log file or a logs database collection
+  const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+  const logs = await getLogs(limit);
+
+  // Try to parse logs if they contain JSON meta
+  const parsedLogs = logs.map(line => {
+    try {
+      // Basic parsing to separate timestamp, level, message
+      // Format: [TIMESTAMP] LEVEL: Message
+      const match = line.match(/^\[(.*?)\] (\w+): (.*)$/);
+      if (match) {
+        return {
+          timestamp: match[1],
+          level: match[2].toLowerCase(),
+          message: match[3],
+          raw: line
+        };
+      }
+      return { message: line, raw: line };
+    } catch {
+      return { message: line, raw: line };
+    }
+  });
+
   res.json({
     success: true,
     message: 'System logs retrieved',
-    data: []
+    data: parsedLogs
   });
 });
 

@@ -10,9 +10,7 @@ interface Certification extends Document {
   skills: string[];
   category: string;
   level: 'beginner' | 'intermediate' | 'advanced' | 'expert';
-  verificationUrl?: string;
   badgeImage?: string;
-  description?: string;
   isActive: boolean;
 }
 
@@ -27,9 +25,7 @@ const CertificationSchema: Schema = new Schema(
     skills: { type: [String], default: [] },
     category: { type: String, required: true },
     level: { type: String, enum: ['beginner', 'intermediate', 'advanced', 'expert'], default: 'intermediate' },
-    verificationUrl: { type: String },
     badgeImage: { type: String },
-    description: { type: String },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }

@@ -11,13 +11,11 @@ import { authenticateAdmin, authorizeAdmin } from '../../middlewares/auth.middle
 
 const router = Router();
 
-// ==================== DASHBOARD & ANALYTICS ====================
 router.get('/dashboard', authenticateAdmin, getAdminDashboard);
 router.get('/analytics', authenticateAdmin, getAnalytics);
 router.get('/visitors', authenticateAdmin, getVisitorInsights);
 router.get('/stats', authenticateAdmin, getAdminStats);
 
-// ==================== SYSTEM LOGS (Super Admin) ====================
 router.get('/logs', authenticateAdmin, authorizeAdmin('super_admin'), getSystemLogs);
 
 export default router;

@@ -40,7 +40,6 @@ const ExperienceSchema: Schema = new Schema(
     },
     industry: { type: String },
     teamSize: { type: Number },
-    reportingTo: { type: String },
   },
   { timestamps: true }
 );

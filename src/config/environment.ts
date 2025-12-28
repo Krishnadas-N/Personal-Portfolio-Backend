@@ -69,7 +69,7 @@ export const config = {
 
   // Security Configuration
   security: {
-    corsOrigins: process.env.CORS_ORIGINS 
+    corsOrigins: process.env.CORS_ORIGINS
       ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
       : ['http://localhost:3000'],
     rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes
@@ -112,7 +112,7 @@ export const config = {
   upload: {
     provider: (process.env.UPLOAD_PROVIDER || 's3') as 's3' | 'cloudinary',
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760'), // 10MB
-    allowedImageTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'],
+    allowedImageTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/avif'],
     allowedDocumentTypes: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
     imageProcessingEnabled: process.env.IMAGE_PROCESSING_ENABLED !== 'false',
     thumbnailSize: parseInt(process.env.THUMBNAIL_SIZE || '300'),
@@ -184,7 +184,7 @@ export const validateConfig = () => {
   ];
 
   const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-  
+
   if (missingVars.length > 0) {
     console.error('Missing required environment variables:', missingVars);
     process.exit(1);
@@ -194,7 +194,7 @@ export const validateConfig = () => {
   if (config.upload.provider === 's3' && process.env.S3_BUCKET_NAME) {
     const awsRequiredVars = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION'];
     const missingAwsVars = awsRequiredVars.filter(varName => !process.env[varName]);
-    
+
     if (missingAwsVars.length > 0) {
       console.warn('AWS S3 configuration incomplete:', missingAwsVars);
     }
@@ -204,7 +204,7 @@ export const validateConfig = () => {
   if (config.upload.provider === 'cloudinary') {
     const cloudinaryRequiredVars = ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'];
     const missingCloudinaryVars = cloudinaryRequiredVars.filter(varName => !process.env[varName]);
-    
+
     if (missingCloudinaryVars.length > 0) {
       console.warn('Cloudinary configuration incomplete:', missingCloudinaryVars);
     }
@@ -214,7 +214,7 @@ export const validateConfig = () => {
   if (config.notifications.emailEnabled) {
     const emailRequiredVars = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS'];
     const missingEmailVars = emailRequiredVars.filter(varName => !process.env[varName]);
-    
+
     if (missingEmailVars.length > 0) {
       console.warn('Email configuration incomplete:', missingEmailVars);
     }

@@ -10,6 +10,7 @@ import session from 'express-session';
 import hpp from 'hpp';
 import morgan from 'morgan';
 import { redisClient } from './config/redis';
+import { logger, requestLogger } from './utils/logger';
 import { doubleCsrfProtection } from './services/csrfProtection';
 import routes from './routes/index';
 import securityMiddleware from './middlewares/security';
@@ -39,11 +40,14 @@ app.use(cookieParser() as RequestHandler);
 app.use(compression());
 
 // Enhanced logging middleware
+// Morgan for console
 if (config.server.nodeEnv === 'development') {
   app.use(morgan('dev'));
 } else {
   app.use(morgan('combined'));
 }
+// Logger for file
+app.use(requestLogger);
 
 // Analytics and tracking middleware
 if (config.analytics.enabled) {

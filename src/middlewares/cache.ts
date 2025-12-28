@@ -11,25 +11,25 @@ export const cache = (duration: number = config.cache.shortTtl) => {
     }
 
     const key = `cache:${req.originalUrl}`;
-    
+
     try {
       // Try to get cached data
       const cachedData = await redisClient.get(key);
-      
+
       if (cachedData) {
         return res.json(JSON.parse(cachedData));
       }
 
       // Store original res.json
       const originalJson = res.json;
-      
+
       // Override res.json to cache the response
-      res.json = function(data: any) {
+      res.json = function (data: any) {
         // Cache the response
         // Use v4 syntax: set(key, value, { EX: duration })
         redisClient.set(key, JSON.stringify(data), { EX: duration })
           .catch(err => console.error('Redis Cache Error', err));
-        
+
         // Call original json method
         return originalJson.call(this, data);
       };
@@ -50,29 +50,36 @@ export const invalidateCache = (pattern: string) => {
 
       // Invalidate cache after successful operations
       const originalJson = res.json;
-      
-      res.json = function(data: any) {
+
+      res.json = function (data: any) {
         // Only invalidate on successful responses
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          // Use scan to find keys avoiding blocking
+          // Use scanIterator to find keys avoiding blocking and type errors
           (async () => {
-             try {
-                const matchPattern = `cache:${pattern}*`;
-                let cursor: number = 0;
-                do {
-                    const reply = await redisClient.scan(cursor as any, { MATCH: matchPattern, COUNT: 100 });
-                    cursor = typeof reply.cursor === 'string' ? parseInt(reply.cursor) : reply.cursor;
-                    const keys = reply.keys;
-                    if (keys.length > 0) {
-                        await redisClient.del(keys);
-                    }
-                } while (cursor !== 0);
-             } catch (e) {
-                 console.error('Cache invalidation failed', e);
-             }
+            try {
+              const matchPattern = `cache:${pattern}*`;
+              const keysToDelete: string[] = [];
+
+              // Collect keys first
+              for await (const key of redisClient.scanIterator({ MATCH: matchPattern, COUNT: 100 })) {
+                keysToDelete.push(key);
+                // Delete in batches of 50 to avoid large payloads
+                if (keysToDelete.length >= 50) {
+                  await redisClient.del(keysToDelete as any);
+                  keysToDelete.length = 0;
+                }
+              }
+
+              // Delete remaining
+              if (keysToDelete.length > 0) {
+                await redisClient.del(keysToDelete as any);
+              }
+            } catch (e) {
+              console.error('Cache invalidation failed', e);
+            }
           })();
         }
-        
+
         return originalJson.call(this, data);
       };
 

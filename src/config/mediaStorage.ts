@@ -36,8 +36,9 @@ const IMAGE_SIZES = {
   original: null
 };
 
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/avif'];
 const ALLOWED_DOCUMENT_TYPES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo'];
 
 // ==================== TYPES ====================
 
@@ -64,6 +65,8 @@ const upload = multer({
     if (ALLOWED_IMAGE_TYPES.includes(file.mimetype)) {
       cb(null, true);
     } else if (ALLOWED_DOCUMENT_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else if (ALLOWED_VIDEO_TYPES.includes(file.mimetype)) {
       cb(null, true);
     } else {
       cb(new Error('Invalid file type: ' + file.mimetype) as any, false);

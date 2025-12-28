@@ -34,11 +34,11 @@ export const trackPageVisit = asyncHandler(async (req: Request, res: Response) =
     visitor.visitCount += 1;
     visitor.pagesVisited.push(page);
     visitor.sessionDuration = Date.now() - visitor.firstVisit.getTime();
-    
+
     if (device) {
       visitor.device = device;
     }
-    
+
     await visitor.save();
   } else {
     // Create new visitor
@@ -115,7 +115,7 @@ export const toggleContentLike = asyncHandler(async (req: Request, res: Response
 
   // Update likes count in the respective model
   const Model = (itemType === 'blog' ? Blog : itemType === 'project' ? Project : null) as Model<any> | null;
-  
+
   if (Model) {
     const item = await Model.findById(itemId);
     if (item) {
@@ -160,7 +160,7 @@ export const submitComment = asyncHandler(async (req: Request, res: Response) =>
   // Verify post exists
   const Model = (postType === 'blog' ? Blog : Project) as Model<any>;
   const post = await Model.findById(postId);
-  
+
   if (!post) {
     throw new AppError(`${postType} not found`, 404);
   }
@@ -250,7 +250,7 @@ export const subscribeToNewsletter = asyncHandler(async (req: Request, res: Resp
 
   // Check if already subscribed
   const existingSubscriber = await NewsletterSubscriber.findOne({ email });
-  
+
   if (existingSubscriber) {
     if (existingSubscriber.status === 'subscribed') {
       throw new AppError('Email is already subscribed', 400);
@@ -263,7 +263,7 @@ export const subscribeToNewsletter = asyncHandler(async (req: Request, res: Resp
       existingSubscriber.subscribedAt = new Date();
       existingSubscriber.unsubscribedAt = undefined;
       await existingSubscriber.save();
-      
+
       res.json({
         success: true,
         message: 'Successfully resubscribed to newsletter',
@@ -302,7 +302,7 @@ export const unsubscribeFromNewsletter = asyncHandler(async (req: Request, res: 
   const { email } = req.body;
 
   const subscriber = await NewsletterSubscriber.findOne({ email });
-  
+
   if (!subscriber) {
     throw new AppError('Email not found in subscribers list', 404);
   }
@@ -375,7 +375,7 @@ export const getPublicStatistics = asyncHandler(async (req: Request, res: Respon
 // @access  Public
 export const searchPortfolioContent = asyncHandler(async (req: Request, res: Response) => {
   const { q, type, page = 1, limit = 10 } = req.query;
-  
+
   if (!q) {
     throw new AppError('Search query is required', 400);
   }
@@ -512,5 +512,43 @@ export const getRelatedContent = asyncHandler(async (req: Request, res: Response
   res.json({
     success: true,
     data: relatedItems
+  });
+});
+
+// @desc    Record post visit (add to visitor history)
+// @route   POST /api/engagement/visit-post
+// @access  Public
+export const recordPostVisit = asyncHandler(async (req: Request, res: Response) => {
+  const { sessionId, postId, postType } = req.body;
+
+  if (!sessionId || !postId || !postType) {
+    throw new AppError('Session ID, Post ID and Post Type are required', 400);
+  }
+
+  if (!['blog', 'project'].includes(postType)) {
+    throw new AppError('Invalid post type', 400);
+  }
+
+  const visitor = await PortfolioVisitor.findOne({ sessionId });
+
+  if (visitor) {
+    if (postType === 'blog') {
+      const alreadyViewed = visitor.viewedBlogs.some(id => id.toString() === postId);
+      if (!alreadyViewed) {
+        visitor.viewedBlogs.push(postId);
+        await visitor.save();
+      }
+    } else if (postType === 'project') {
+      const alreadyViewed = visitor.viewedProjects.some(id => id.toString() === postId);
+      if (!alreadyViewed) {
+        visitor.viewedProjects.push(postId);
+        await visitor.save();
+      }
+    }
+  }
+
+  res.json({
+    success: true,
+    message: 'Post visit recorded'
   });
 });

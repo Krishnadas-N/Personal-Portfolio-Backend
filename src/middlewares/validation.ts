@@ -151,7 +151,7 @@ export const educationValidations = {
     body('fieldOfStudy').trim().isLength({ min: 2, max: 100 }).withMessage('Field of study must be between 2 and 100 characters'),
     body('startDate').isISO8601().withMessage('Please provide a valid start date'),
     body('endDate').optional().isISO8601().withMessage('Please provide a valid end date'),
-    body('gpa').optional().isFloat({ min: 0, max: 4 }).withMessage('GPA must be between 0 and 4'),
+    body('gpa').optional().isFloat({ min: 0, max: 10 }).withMessage('GPA must be between 0 and 10'),
     handleValidationErrors
   ]
 };

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { emailer } from '../services/emailService';
+import { logger } from '../utils/logger';
 
 // Custom error class
 export class AppError extends Error {
@@ -51,7 +52,7 @@ export const errorHandler = (
   }
 
   // Log error for monitoring
-  console.error('Error:', {
+  logger.error('Error:', {
     message: error.message,
     stack: error.stack,
     url: req.url,
@@ -69,8 +70,8 @@ export const errorHandler = (
   // Send response
   res.status(statusCode).json({
     success: false,
-    message: process.env.NODE_ENV === 'production' && statusCode >= 500 
-      ? 'Something went wrong!' 
+    message: process.env.NODE_ENV === 'production' && statusCode >= 500
+      ? 'Something went wrong!'
       : message,
     ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
   });

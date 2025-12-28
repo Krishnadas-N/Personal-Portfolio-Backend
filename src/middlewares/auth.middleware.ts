@@ -1,41 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import User from '../models/User';
 import Admin from '../models/Admin';
 
-// JWT Authentication middleware
-export const authenticateToken = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
-
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'Access token required'
-      });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
-    
-    // Check if user exists and is active
-    const user = await User.findById(decoded.userId).select('-password');
-    if (!user || !user.isActive) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid or expired token'
-      });
-    }
-
-    (req as any).user = user;
-    next();
-  } catch (error) {
-    return res.status(403).json({
-      success: false,
-      message: 'Invalid token'
-    });
-  }
-};
 
 // Admin Authentication middleware
 export const authenticateAdmin = async (req: Request, res: Response, next: NextFunction) => {
@@ -51,7 +17,7 @@ export const authenticateAdmin = async (req: Request, res: Response, next: NextF
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
-    
+
     const admin = await Admin.findById(decoded.adminId).select('-password');
     if (!admin || !admin.isActive) {
       return res.status(401).json({
@@ -81,7 +47,7 @@ export const authorize = (...roles: string[]) => {
     }
 
     const userRole = (req as any).user?.role || (req as any).admin?.role;
-    
+
     if (!roles.includes(userRole)) {
       return res.status(403).json({
         success: false,
@@ -114,25 +80,6 @@ export const authorizeAdmin = (...adminRoles: string[]) => {
   };
 };
 
-// Optional authentication (doesn't fail if no token)
-export const optionalAuth = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (token) {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
-      const user = await User.findById(decoded.userId).select('-password');
-      if (user && user.isActive) {
-        (req as any).user = user;
-      }
-    }
-  } catch (error) {
-    // Ignore errors for optional auth
-  }
-  
-  next();
-};
 
 // Generate JWT token
 export const generateToken = (payload: any, expiresIn: string = '7d'): string => {

@@ -1,8 +1,5 @@
 import { Router } from 'express';
 import {
-  // Profile
-  getProfile,
-  
   // Projects
   getProjects,
   getProject,

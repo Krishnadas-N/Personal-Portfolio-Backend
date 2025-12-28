@@ -5,7 +5,7 @@ interface Blog extends Document {
   slug: string;
   content: string;
   excerpt: string;
-  author: Schema.Types.ObjectId;
+  author: string;
   tags: string[];
   category: string;
   featuredImage?: string;
@@ -27,7 +27,7 @@ const BlogSchema: Schema = new Schema(
     slug: { type: String, required: true, unique: true },
     content: { type: String, required: true },
     excerpt: { type: String, required: true },
-    author: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    author: { type: String, required: true },
     tags: { type: [String], default: [] },
     category: { type: String, required: true },
     featuredImage: { type: String },
@@ -35,7 +35,7 @@ const BlogSchema: Schema = new Schema(
     publishedAt: { type: Date },
     viewsCount: { type: Number, default: 0 },
     likes: { type: Number, default: 0 },
-    comments: [{ type: Schema.Types.ObjectId, ref: 'Comment' }],
+    comments: [{ type: Schema.Types.ObjectId, ref: 'PortfolioComment' }],
     seoTitle: { type: String },
     seoDescription: { type: String },
     readingTime: { type: Number, default: 0 },
@@ -46,7 +46,7 @@ const BlogSchema: Schema = new Schema(
 );
 
 // Generate slug from title
-BlogSchema.pre('save', function(next) {
+BlogSchema.pre('save', function (next) {
   if (this.isModified('title') && !(this as any).slug) {
     (this as any).slug = (this as any).title
       .toLowerCase()
@@ -59,7 +59,7 @@ BlogSchema.pre('save', function(next) {
 });
 
 // Calculate reading time
-BlogSchema.pre('save', function(next) {
+BlogSchema.pre('save', function (next) {
   if (this.isModified('content')) {
     const wordsPerMinute = 200;
     const wordCount = (this as any).content.split(/\s+/).length;

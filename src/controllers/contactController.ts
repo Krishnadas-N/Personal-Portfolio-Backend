@@ -201,8 +201,8 @@ export const markAsSpam = asyncHandler(async (req: Request, res: Response) => {
     throw new AppError('Contact submission not found', 404);
   }
 
-  contact.isSpam = true;
-  contact.status = 'closed';
+  contact.isSpam = !contact.isSpam;
+  contact.status = contact.isSpam ? 'closed' : 'read';
   await contact.save();
 
   res.json({

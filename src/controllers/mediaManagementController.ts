@@ -4,14 +4,11 @@ import {
   uploadSingle,
   uploadMultiple,
   uploadFields,
-  processImage,
-  uploadProcessedImages,
   deleteFromS3,
   getSignedUrl,
   listFiles,
   generateUniqueFilename,
   uploadFileToProvider,
-  IMAGE_SIZES,
   MediaFile
 } from '../config/mediaStorage';
 
@@ -23,57 +20,59 @@ const DEFAULT_FOLDER = 'portfolio-media';
 export const uploadSingleImage = asyncHandler(async (req: Request, res: Response) => {
   const upload = uploadSingle('image');
 
-  upload(req, res, async (err: any) => {
-    if (err) {
-      throw new AppError(`Upload failed: ${err.message}`, 400);
-    }
-
-    if (!req.file) {
-      throw new AppError('No file uploaded', 400);
-    }
-
-    const file = req.file;
-    const folder = req.body.folder || DEFAULT_FOLDER;
-
-    // Generate key for the file
-    // Note: If image, we use 'img' prefix (or based on folder)
-    const baseKey = generateUniqueFilename(file.originalname);
-
-    try {
-      // 1. Upload Original File
-      const originalUpload = await uploadFileToProvider(
-        file.buffer,
-        baseKey,
-        file.mimetype,
-        folder
-      );
-
-      let processedData = undefined;
-      // Image processing removed as per user request to only upload original file
-
-
-      res.json({
-        success: true,
-        message: processedData ? 'Image uploaded and processed successfully' : 'File uploaded successfully',
-        data: {
-          original: {
-            url: originalUpload.url,
-            key: originalUpload.key,
-            size: file.size,
-            provider: originalUpload.provider
-          },
-          processed: processedData,
-          metadata: {
-            originalname: file.originalname,
-            mimetype: file.mimetype,
-            encoding: file.encoding
-          }
-        }
-      });
-    } catch (uploadError: any) {
-      throw new AppError(`Upload to provider failed: ${uploadError.message}`, 500);
-    }
+  // Wrap multer middleware in promise
+  await new Promise<void>((resolve, reject) => {
+    upload(req, res, (err: any) => {
+      if (err) reject(new AppError(`Upload failed: ${err.message}`, 400));
+      else resolve();
+    });
   });
+
+  if (!req.file) {
+    throw new AppError('No file uploaded', 400);
+  }
+
+  const file = req.file;
+  const folder = req.body.folder || DEFAULT_FOLDER;
+
+  // Generate key for the file
+  // Note: If image, we use 'img' prefix (or based on folder)
+  const baseKey = generateUniqueFilename(file.originalname);
+
+  try {
+    // 1. Upload Original File
+    const originalUpload = await uploadFileToProvider(
+      file.buffer,
+      baseKey,
+      file.mimetype,
+      folder
+    );
+
+    let processedData = undefined;
+    // Image processing removed as per user request to only upload original file
+
+    res.json({
+      success: true,
+      message: processedData ? 'Image uploaded and processed successfully' : 'File uploaded successfully',
+      data: {
+        original: {
+          url: originalUpload.url,
+          key: originalUpload.key,
+          size: file.size,
+          provider: originalUpload.provider
+        },
+        processed: processedData,
+        metadata: {
+          originalname: file.originalname,
+          mimetype: file.mimetype,
+          encoding: file.encoding
+        }
+      }
+    });
+
+  } catch (uploadError: any) {
+    throw new AppError(`Upload to provider failed: ${uploadError.message}`, 500);
+  }
 });
 
 // @desc    Upload multiple images
@@ -82,25 +81,94 @@ export const uploadSingleImage = asyncHandler(async (req: Request, res: Response
 export const uploadMultipleImages = asyncHandler(async (req: Request, res: Response) => {
   const upload = uploadMultiple('images');
 
-  upload(req, res, async (err: any) => {
-    if (err) {
-      throw new AppError(`Upload failed: ${err.message}`, 400);
+  await new Promise<void>((resolve, reject) => {
+    upload(req, res, (err: any) => {
+      if (err) reject(new AppError(`Upload failed: ${err.message}`, 400));
+      else resolve();
+    });
+  });
+
+  const files = req.files as Express.Multer.File[];
+
+  if (!files || files.length === 0) {
+    throw new AppError('No files uploaded', 400);
+  }
+
+  const folder = req.body.folder || DEFAULT_FOLDER;
+  const uploadPromises = files.map(async (file) => {
+    const baseKey = generateUniqueFilename(file.originalname);
+    try {
+      const originalUpload = await uploadFileToProvider(
+        file.buffer,
+        baseKey,
+        file.mimetype,
+        folder
+      );
+
+      let processedData = undefined;
+
+      return {
+        original: {
+          url: originalUpload.url,
+          key: originalUpload.key,
+          size: file.size,
+          provider: originalUpload.provider
+        },
+        processed: processedData,
+        metadata: {
+          originalname: file.originalname,
+          mimetype: file.mimetype
+        }
+      };
+    } catch (error) {
+      console.error('File upload failed:', error);
+      return {
+        error: 'Upload failed',
+        originalname: file.originalname
+      };
     }
+  });
 
-    const files = req.files as Express.Multer.File[];
+  const uploadResults = await Promise.all(uploadPromises);
 
-    if (!files || files.length === 0) {
-      throw new AppError('No files uploaded', 400);
-    }
+  res.json({
+    success: true,
+    message: `${uploadResults.filter(r => !r.error).length} files uploaded successfully`,
+    data: uploadResults
+  });
+});
 
-    const folder = req.body.folder || DEFAULT_FOLDER;
-    const uploadResults = [];
+// @desc    Upload mixed files (images, documents, etc.)
+// @route   POST /api/admin/media/files
+// @access  Private (Admin)
+export const uploadMixedFiles = asyncHandler(async (req: Request, res: Response) => {
+  const fields = [
+    { name: 'images', maxCount: 5 },
+    { name: 'documents', maxCount: 3 },
+    { name: 'videos', maxCount: 2 },
+    { name: 'files', maxCount: 10 },
+    { name: 'file', maxCount: 10 }
+  ];
 
-    for (const file of files) {
+  const upload = uploadFields(fields);
+
+  await new Promise<void>((resolve, reject) => {
+    upload(req, res, (err: any) => {
+      if (err) reject(new AppError(`Upload failed: ${err.message}`, 400));
+      else resolve();
+    });
+  });
+
+  const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+  const results: any = {};
+  const folder = req.body.folder || DEFAULT_FOLDER;
+
+  // Process each file type concurrently
+  for (const [fieldName, fileArray] of Object.entries(files)) {
+    const fieldPromises = fileArray.map(async (file) => {
       const baseKey = generateUniqueFilename(file.originalname);
 
       try {
-        // Upload Original
         const originalUpload = await uploadFileToProvider(
           file.buffer,
           baseKey,
@@ -109,10 +177,8 @@ export const uploadMultipleImages = asyncHandler(async (req: Request, res: Respo
         );
 
         let processedData = undefined;
-        // Image processing removed
 
-
-        uploadResults.push({
+        return {
           original: {
             url: originalUpload.url,
             key: originalUpload.key,
@@ -124,93 +190,23 @@ export const uploadMultipleImages = asyncHandler(async (req: Request, res: Respo
             originalname: file.originalname,
             mimetype: file.mimetype
           }
-        });
+        };
       } catch (error) {
         console.error('File upload failed:', error);
-        // Continue with other files or add error entry
-        uploadResults.push({
+        return {
           error: 'Upload failed',
           originalname: file.originalname
-        });
+        };
       }
-    }
-
-    res.json({
-      success: true,
-      message: `${uploadResults.filter(r => !r.error).length} files uploaded successfully`,
-      data: uploadResults
     });
-  });
-});
 
-// @desc    Upload mixed files (images, documents, etc.)
-// @route   POST /api/admin/media/files
-// @access  Private (Admin)
-export const uploadMixedFiles = asyncHandler(async (req: Request, res: Response) => {
-  const fields = [
-    { name: 'images', maxCount: 5 },
-    { name: 'documents', maxCount: 3 },
-    { name: 'videos', maxCount: 2 }
-  ];
+    results[fieldName] = await Promise.all(fieldPromises);
+  }
 
-  const upload = uploadFields(fields);
-
-  upload(req, res, async (err: any) => {
-    if (err) {
-      throw new AppError(`Upload failed: ${err.message}`, 400);
-    }
-
-    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-    const results: any = {};
-    const folder = req.body.folder || DEFAULT_FOLDER;
-
-    // Process each file type
-    for (const [fieldName, fileArray] of Object.entries(files)) {
-      results[fieldName] = [];
-
-      for (const file of fileArray) {
-        const baseKey = generateUniqueFilename(file.originalname);
-
-        try {
-          const originalUpload = await uploadFileToProvider(
-            file.buffer,
-            baseKey,
-            file.mimetype,
-            folder
-          );
-
-          let processedData = undefined;
-          // Image processing removed
-
-
-          results[fieldName].push({
-            original: {
-              url: originalUpload.url,
-              key: originalUpload.key,
-              size: file.size,
-              provider: originalUpload.provider
-            },
-            processed: processedData,
-            metadata: {
-              originalname: file.originalname,
-              mimetype: file.mimetype
-            }
-          });
-        } catch (error) {
-          console.error('File upload failed:', error);
-          results[fieldName].push({
-            error: 'Upload failed',
-            originalname: file.originalname
-          });
-        }
-      }
-    }
-
-    res.json({
-      success: true,
-      message: 'Files uploaded successfully',
-      data: results
-    });
+  res.json({
+    success: true,
+    message: 'Files uploaded successfully',
+    data: results
   });
 });
 

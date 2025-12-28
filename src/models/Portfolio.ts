@@ -103,58 +103,58 @@ export interface PortfolioSettings extends Document {
 }
 
 const PortfolioSettingsSchema: Schema = new Schema({
-    siteName: { type: String, required: true, default: "Portfolio" },
-    siteDescription: { type: String, required: true },
-    profileImage: { type: String },
-    siteKeywords: [{ type: String }],
-    siteLogo: { type: String },
-    siteFavicon: { type: String },
-    theme: {
-        primaryColor: { type: String, default: "#3B82F6" },
-        secondaryColor: { type: String, default: "#1E40AF" },
-        accentColor: { type: String, default: "#F59E0B" },
-        fontFamily: { type: String, default: "Inter" },
-        darkMode: { type: Boolean, default: false }
-    },
-    socialMedia: [{
-        platform: { type: String, required: true },
-        url: { type: String, required: true },
-        icon: { type: String },
-        active: { type: Boolean, default: true }
-    }],
-    contact: {
-        email: { type: String },
-        phone: { type: String },
-        address: { type: String },
-        mapUrl: { type: String }
-    },
-    seo: {
-        metaTitle: { type: String },
-        metaDescription: { type: String },
-        ogImage: { type: String },
-        twitterCard: { type: String },
-        canonicalUrl: { type: String }
-    },
-    features: {
-        blog: { type: Boolean, default: true },
-        projects: { type: Boolean, default: true },
-        testimonials: { type: Boolean, default: true },
-        contact: { type: Boolean, default: true },
-        analytics: { type: Boolean, default: true },
-        chatBot: { type: Boolean, default: true },
-        newsletter: { type: Boolean, default: false }
-    },
-    maintenance: {
-        enabled: { type: Boolean, default: false },
-        message: { type: String },
-        allowedIPs: [{ type: String }]
-    },
-    notifications: {
-        email: { type: Boolean, default: true },
-        slack: { type: Boolean, default: false },
-        webhook: { type: Boolean, default: false },
-        webhookUrl: { type: String }
-    }
+  siteName: { type: String, required: true, default: "Portfolio" },
+  siteDescription: { type: String, required: true },
+  profileImage: { type: String },
+  siteKeywords: [{ type: String }],
+  siteLogo: { type: String },
+  siteFavicon: { type: String },
+  theme: {
+    primaryColor: { type: String, default: "#3B82F6" },
+    secondaryColor: { type: String, default: "#1E40AF" },
+    accentColor: { type: String, default: "#F59E0B" },
+    fontFamily: { type: String, default: "Inter" },
+    darkMode: { type: Boolean, default: false }
+  },
+  socialMedia: [{
+    platform: { type: String, required: true },
+    url: { type: String, required: true },
+    icon: { type: String },
+    active: { type: Boolean, default: true }
+  }],
+  contact: {
+    email: { type: String },
+    phone: { type: String },
+    address: { type: String },
+    mapUrl: { type: String }
+  },
+  seo: {
+    metaTitle: { type: String },
+    metaDescription: { type: String },
+    ogImage: { type: String },
+    twitterCard: { type: String },
+    canonicalUrl: { type: String }
+  },
+  features: {
+    blog: { type: Boolean, default: true },
+    projects: { type: Boolean, default: true },
+    testimonials: { type: Boolean, default: true },
+    contact: { type: Boolean, default: true },
+    analytics: { type: Boolean, default: true },
+    chatBot: { type: Boolean, default: true },
+    newsletter: { type: Boolean, default: false }
+  },
+  maintenance: {
+    enabled: { type: Boolean, default: false },
+    message: { type: String },
+    allowedIPs: [{ type: String }]
+  },
+  notifications: {
+    email: { type: Boolean, default: true },
+    slack: { type: Boolean, default: false },
+    webhook: { type: Boolean, default: false },
+    webhookUrl: { type: String }
+  }
 }, { timestamps: true });
 
 
@@ -250,6 +250,8 @@ export interface PortfolioVisitor extends Document {
   referrer?: string;
   landingPage: string;
   pagesVisited: string[];
+  viewedBlogs: Schema.Types.ObjectId[];
+  viewedProjects: Schema.Types.ObjectId[];
   sessionDuration: number;
   isReturning: boolean;
   device: {
@@ -271,6 +273,8 @@ const PortfolioVisitorSchema: Schema = new Schema({
   referrer: { type: String },
   landingPage: { type: String, required: true },
   pagesVisited: [{ type: String }],
+  viewedBlogs: [{ type: Schema.Types.ObjectId, ref: 'Blog' }],
+  viewedProjects: [{ type: Schema.Types.ObjectId, ref: 'Project' }],
   sessionDuration: { type: Number, default: 0 },
   isReturning: { type: Boolean, default: false },
   device: {

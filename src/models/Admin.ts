@@ -27,15 +27,13 @@ const AdminSchema: Schema = new Schema(
   { timestamps: true }
 );
 
-// Hash password before saving
-AdminSchema.pre('save', async function(next) {
+AdminSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
   (this as any).password = await bcrypt.hash((this as any).password as string, 12);
   next();
 });
 
-// Compare password method
-AdminSchema.methods.comparePassword = async function(candidatePassword: string): Promise<boolean> {
+AdminSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
   return bcrypt.compare(candidatePassword, this.password);
 };
 

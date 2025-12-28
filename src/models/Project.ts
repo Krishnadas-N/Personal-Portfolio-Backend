@@ -8,7 +8,7 @@ interface Project extends Document {
     repo?: string;
     images: string[];
     skills: string[];
-    projectType:string;
+    projectType: string;
     startDate: Date;
     endDate?: Date;
     current: boolean;
@@ -22,13 +22,13 @@ interface Project extends Document {
     license?: string;
     documentationLink?: string;
     priority?: number;
-    lastUpdatedBy?: string; 
+    lastUpdatedBy?: string;
     deploymentDetails?: {
         platform: string;
         url: string;
     }[];
     archived?: boolean;
-    seoKeywords?: string[]; 
+    seoKeywords?: string[];
     additionalResources?: string[];
     videoRepresentation?: string;
 }
@@ -64,7 +64,7 @@ const projectSchema = new Schema<Project>({
     archived: { type: Boolean, default: false },
     seoKeywords: [{ type: String }],
     additionalResources: [{ type: String }],
-    videoRepresentation: { type: String } 
+    videoRepresentation: { type: String }
 }, { timestamps: true });
 
 export default model<Project>('Project', projectSchema);

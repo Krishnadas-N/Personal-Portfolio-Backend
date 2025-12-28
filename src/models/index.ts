@@ -8,7 +8,6 @@ export { default as Experience } from './Experience';
 export { default as Project } from './Project';
 export { default as Skill } from './Skill';
 export { default as Testimonial } from './Testimonial';
-export { default as User } from './User';
 export { 
   PortfolioAnalytics,
   PortfolioSettings,

@@ -6,10 +6,10 @@ import { asyncHandler, AppError } from '../middlewares/errorHandler';
 // @route   GET /api/blogs
 // @access  Public
 export const getBlogs = asyncHandler(async (req: Request, res: Response) => {
-  const { 
-    page = 1, 
-    limit = 10, 
-    category, 
+  const {
+    page = 1,
+    limit = 10,
+    category,
     status = 'published',
     search,
     featured,
@@ -43,12 +43,13 @@ export const getBlogs = asyncHandler(async (req: Request, res: Response) => {
   // Optimized parallel queries + lean()
   const [blogs, total] = await Promise.all([
     Blog.find(query)
-        .sort(sortObj)
-        .skip(skip)
-        .limit(limitNum)
-        .populate('author', 'name email')
-        .populate('relatedPosts', 'title slug')
-        .lean(),
+      .sort(sortObj)
+      .skip(skip)
+      .limit(limitNum)
+      .populate('author', 'name email')
+      .populate('relatedPosts', 'title slug')
+      .populate('comments', 'name email')
+      .lean(),
     Blog.countDocuments(query)
   ]);
 
@@ -65,21 +66,33 @@ export const getBlogs = asyncHandler(async (req: Request, res: Response) => {
 });
 
 // @desc    Get single blog
-// @route   GET /api/blogs/:slug
+// @desc    Get single blog
+// @route   GET /api/blogs/:id
 // @access  Public
 export const getBlog = asyncHandler(async (req: Request, res: Response) => {
-  const blog = await Blog.findOne({ slug: req.params.slug })
+  const { id } = req.params;
+
+  // Check if the parameter is a valid ObjectId, if so, query by _id
+  // This allows the admin interface to edit blogs by ID, while public access uses slugs
+  const isObjectId = /^[0-9a-fA-F]{24}$/.test(id);
+  const query = isObjectId ? { _id: id } : { slug: id };
+
+  const blog = await Blog.findOne(query)
     .populate('author', 'name email')
     .populate('relatedPosts', 'title slug excerpt');
 
-  if (!blog || blog.status !== 'published') {
+  // Allow if blog is published OR if the requester is an admin (detected by usage of ID or auth check)
+  // Since this route is 'Public', we might not have user info unless auth middleware ran.
+  // Assuming Admin uses ID to fetch for editing, we relax the check for ID queries.
+  if (!blog || (!isObjectId && (blog.status !== 'published' && !(req as any).admin))) {
     throw new AppError('Blog post not found', 404);
   }
 
-  // Increment view count (async, fire & forget usually safe for counters)
-  // For strict consistency, await.
-  blog.viewsCount += 1;
-  await blog.save();
+  // Increment view count only if NOT admin
+  if (!(req as any).admin) {
+    blog.viewsCount += 1;
+    await blog.save();
+  }
 
   res.json({
     success: true,
@@ -173,9 +186,9 @@ export const publishBlog = asyncHandler(async (req: Request, res: Response) => {
 export const likeBlog = asyncHandler(async (req: Request, res: Response) => {
   // Optimization: Atomic update
   const blog = await Blog.findByIdAndUpdate(
-      req.params.id,
-      { $inc: { likes: 1 } },
-      { new: true }
+    req.params.id,
+    { $inc: { likes: 1 } },
+    { new: true }
   ).select('likes');
 
   if (!blog) {
@@ -254,30 +267,30 @@ export const getBlogCategories = asyncHandler(async (req: Request, res: Response
 export const getBlogStats = asyncHandler(async (req: Request, res: Response) => {
   const [stats, categoryStats] = await Promise.all([
     Blog.aggregate([
-        {
-          $group: {
-            _id: null,
-            totalBlogs: { $sum: 1 },
-            publishedBlogs: {
-              $sum: { $cond: [{ $eq: ['$status', 'published'] }, 1, 0] }
-            },
-            draftBlogs: {
-              $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] }
-            },
-            totalViews: { $sum: '$viewsCount' },
-            totalLikes: { $sum: '$likes' },
-            featuredBlogs: {
-              $sum: { $cond: ['$isFeatured', 1, 0] }
-            }
+      {
+        $group: {
+          _id: null,
+          totalBlogs: { $sum: 1 },
+          publishedBlogs: {
+            $sum: { $cond: [{ $eq: ['$status', 'published'] }, 1, 0] }
+          },
+          draftBlogs: {
+            $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] }
+          },
+          totalViews: { $sum: '$viewsCount' },
+          totalLikes: { $sum: '$likes' },
+          featuredBlogs: {
+            $sum: { $cond: ['$isFeatured', 1, 0] }
           }
         }
-      ]),
-      Blog.aggregate([
-        { $match: { status: 'published' } },
-        { $group: { _id: '$category', count: { $sum: 1 } } },
-        { $sort: { count: -1 } },
-        { $limit: 10 }
-      ])
+      }
+    ]),
+    Blog.aggregate([
+      { $match: { status: 'published' } },
+      { $group: { _id: '$category', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 }
+    ])
   ]);
 
   res.json({

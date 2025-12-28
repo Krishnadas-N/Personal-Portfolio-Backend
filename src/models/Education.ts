@@ -9,6 +9,7 @@ interface Education extends Document {
   gpa?: number;
   description?: string;
   activities?: string[];
+  skills?: string[];
   achievements?: string[];
   location?: string;
   isCurrent: boolean;
@@ -26,6 +27,7 @@ const EducationSchema: Schema = new Schema(
     gpa: { type: Number },
     description: { type: String },
     activities: { type: [String], default: [] },
+    skills: { type: [String], default: [] },
     achievements: { type: [String], default: [] },
     location: { type: String },
     isCurrent: { type: Boolean, default: false },

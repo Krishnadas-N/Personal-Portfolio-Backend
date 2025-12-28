@@ -14,7 +14,6 @@ import { authenticateAdmin } from '../../middlewares/auth.middleware';
 
 const router = Router();
 
-// ==================== CONTACT MANAGEMENT ====================
 router.get('/', authenticateAdmin, getContacts);
 router.get('/stats', authenticateAdmin, getContactStats);
 router.get('/:id', authenticateAdmin, getContact);

@@ -1,5 +1,4 @@
 // Export all controllers
-export * from './profileController';
 export * from './projectController';
 export * from './blogController';
 export * from './contactController';
@@ -11,3 +10,4 @@ export * from './testimonialController';
 export * from './adminController';
 export * from './mediaManagementController';
 export * from './userEngagementController';
+export * from './newsletterController';

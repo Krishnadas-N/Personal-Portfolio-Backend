@@ -9,6 +9,16 @@ interface Logger {
   debug(message: string, meta?: any): void;
 }
 
+import fs from 'fs';
+import path from 'path';
+
+// Ensure logs directory exists
+const logDir = path.join(process.cwd(), 'logs');
+if (!fs.existsSync(logDir)) {
+  fs.mkdirSync(logDir);
+}
+const logFilePath = path.join(logDir, 'app.log');
+
 // Simple logger implementation
 class SimpleLogger implements Logger {
   private formatMessage(level: string, message: string, meta?: any): string {
@@ -17,31 +27,101 @@ class SimpleLogger implements Logger {
     return `[${timestamp}] ${level.toUpperCase()}: ${message}${metaStr}`;
   }
 
+  private checkLogRotation(): void {
+    try {
+      if (!fs.existsSync(logFilePath)) return;
+
+      const stats = fs.statSync(logFilePath);
+      // 5MB limit
+      if (stats.size < 5 * 1024 * 1024) return;
+
+      // Rename current file
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupPath = path.join(logDir, `app-${timestamp}.log`);
+      fs.renameSync(logFilePath, backupPath);
+
+      // Clean up old files (keep last 5)
+      const files = fs.readdirSync(logDir);
+      const logFiles = files.filter(f => f.startsWith('app-') && f.endsWith('.log'));
+
+      if (logFiles.length > 5) {
+        // Sort by creation time (stat) to find oldest
+        const fileStats = logFiles.map(f => ({
+          name: f,
+          time: fs.statSync(path.join(logDir, f)).mtime.getTime()
+        }));
+
+        fileStats.sort((a, b) => a.time - b.time); // Oldest first
+
+        // Delete oldest until we have 5 left
+        const deleteCount = logFiles.length - 5;
+        for (let i = 0; i < deleteCount; i++) {
+          fs.unlinkSync(path.join(logDir, fileStats[i].name));
+        }
+      }
+    } catch (err) {
+      console.error('Log rotation failed', err);
+    }
+  }
+
+  private writeToFile(message: string): void {
+    try {
+      this.checkLogRotation();
+      fs.appendFileSync(logFilePath, message + '\n');
+    } catch (err) {
+      console.error('Failed to write to log file', err);
+    }
+  }
+
   info(message: string, meta?: any): void {
-    console.log(this.formatMessage('info', message, meta));
+    const formatted = this.formatMessage('info', message, meta);
+    console.log(formatted);
+    this.writeToFile(formatted);
   }
 
   error(message: string, meta?: any): void {
-    console.error(this.formatMessage('error', message, meta));
+    const formatted = this.formatMessage('error', message, meta);
+    console.error(formatted);
+    this.writeToFile(formatted);
   }
 
   warn(message: string, meta?: any): void {
-    console.warn(this.formatMessage('warn', message, meta));
+    const formatted = this.formatMessage('warn', message, meta);
+    console.warn(formatted);
+    this.writeToFile(formatted);
   }
 
   debug(message: string, meta?: any): void {
     if (process.env.NODE_ENV === 'development') {
-      console.debug(this.formatMessage('debug', message, meta));
+      const formatted = this.formatMessage('debug', message, meta);
+      console.debug(formatted);
+      this.writeToFile(formatted);
     }
   }
 }
 
 export const logger = new SimpleLogger();
 
+export const getLogs = async (limit: number = 100): Promise<string[]> => {
+  try {
+    if (!fs.existsSync(logFilePath)) {
+      return [];
+    }
+
+    const data = await fs.promises.readFile(logFilePath, 'utf8');
+    const lines = data.split('\n').filter(line => line.trim() !== '');
+    return lines.slice(-limit).reverse();
+  } catch (error) {
+    console.error('Failed to read logs', error);
+    return [];
+  }
+};
+
+
 // Request logging middleware
 export const requestLogger = (req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
-  
+
   res.on('finish', () => {
     const duration = Date.now() - start;
     const logData = {
@@ -86,11 +166,11 @@ export const errorLogger = (error: any, req: Request, res: Response, next: NextF
 // Performance monitoring
 export const performanceMonitor = (req: Request, res: Response, next: NextFunction) => {
   const start = process.hrtime.bigint();
-  
+
   res.on('finish', () => {
     const end = process.hrtime.bigint();
     const duration = Number(end - start) / 1000000; // Convert to milliseconds
-    
+
     // Log slow requests
     if (duration > 1000) { // More than 1 second
       logger.warn('Slow Request Detected', {
@@ -109,7 +189,7 @@ export const performanceMonitor = (req: Request, res: Response, next: NextFuncti
         timestamp: Date.now(),
         status: res.statusCode
       }));
-      
+
       // Keep only last 100 entries
       redisClient.ltrim(key, 0, 99);
     }
@@ -131,7 +211,7 @@ export const collectSystemMetrics = async () => {
   };
 
   logger.info('System Metrics', metrics);
-  
+
   // Store in Redis for monitoring
   if (process.env.ENABLE_MONITORING === 'true') {
     await redisClient.set('system:metrics', JSON.stringify(metrics), { EX: 300 });
@@ -174,7 +254,7 @@ export const healthCheck = async () => {
     logger.error('Memory health check failed', error);
   }
 
-  const isHealthy = Object.values(checks).every(check => 
+  const isHealthy = Object.values(checks).every(check =>
     typeof check === 'boolean' ? check : true
   );
 
@@ -193,11 +273,11 @@ export const rateLimitKey = (req: Request): string => {
 export const checkRateLimit = async (key: string, limit: number, windowMs: number): Promise<boolean> => {
   try {
     const current = await redisClient.incr(key);
-    
+
     if (current === 1) {
       await redisClient.expire(key, Math.ceil(windowMs / 1000));
     }
-    
+
     return current <= limit;
   } catch (error) {
     logger.error('Rate limit check failed', error);

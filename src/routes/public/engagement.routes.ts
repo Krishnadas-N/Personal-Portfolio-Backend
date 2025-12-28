@@ -5,16 +5,17 @@ import {
   getPublicStatistics,
   searchPortfolioContent,
   getRelatedContent,
-  
+
   // Engagement
   toggleContentLike,
   likeProject,
   likeBlog,
-  
+
   // Comments
   submitComment,
   getPostComments,
-  
+  recordPostVisit,
+
   // Contact
   submitContact
 } from '../../controllers';
@@ -25,6 +26,7 @@ const router = Router();
 
 // ==================== ANALYTICS ====================
 router.post('/analytics/page-visits', trackPageVisit);
+router.post('/analytics/visit-post', recordPostVisit);
 router.get('/statistics', getPublicStatistics);
 router.get('/search', searchPortfolioContent);
 router.get('/content/related/:type/:id', getRelatedContent);
