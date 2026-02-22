@@ -10,6 +10,7 @@ export const getBlogs = asyncHandler(async (req: Request, res: Response) => {
     page = 1,
     limit = 10,
     category,
+    categories,
     status = 'published',
     search,
     featured,
@@ -17,10 +18,25 @@ export const getBlogs = asyncHandler(async (req: Request, res: Response) => {
     order = 'desc'
   } = req.query;
 
+  const isCategoriesView = categories === 'true' || categories === '1';
+  if (isCategoriesView) {
+    const categoryStats = await Blog.aggregate([
+      { $match: { status: 'published' } },
+      { $group: { _id: '$category', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    res.json({
+      success: true,
+      data: categoryStats
+    });
+    return;
+  }
+
   const query: any = { status };
 
   // Apply filters
-  if (category) query.category = category;
+  if (category) query.category = { $regex: category, $options: 'i' };
   if (featured !== undefined) query.isFeatured = featured === 'true';
   if (search) {
     query.$or = [
@@ -70,16 +86,17 @@ export const getBlogs = asyncHandler(async (req: Request, res: Response) => {
 // @route   GET /api/blogs/:id
 // @access  Public
 export const getBlog = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { slug } = req.params;
 
   // Check if the parameter is a valid ObjectId, if so, query by _id
   // This allows the admin interface to edit blogs by ID, while public access uses slugs
-  const isObjectId = /^[0-9a-fA-F]{24}$/.test(id);
-  const query = isObjectId ? { _id: id } : { slug: id };
+  const isObjectId = /^[0-9a-fA-F]{24}$/.test(slug);
+  const query = isObjectId ? { _id: slug } : { slug };
 
   const blog = await Blog.findOne(query)
     .populate('author', 'name email')
-    .populate('relatedPosts', 'title slug excerpt');
+    .populate('relatedPosts', 'title slug excerpt')
+    .populate('comments');
 
   // Allow if blog is published OR if the requester is an admin (detected by usage of ID or auth check)
   // Since this route is 'Public', we might not have user info unless auth middleware ran.

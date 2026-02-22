@@ -3,6 +3,7 @@ import Admin from '../models/Admin';
 import Contact from '../models/Contact';
 import Project from '../models/Project';
 import Blog from '../models/Blog';
+import Experience from '../models/Experience';
 import {
   PortfolioAnalytics,
   PortfolioSettings,
@@ -456,6 +457,8 @@ export const getVisitorInsights = asyncHandler(async (req: Request, res: Respons
 // @access  Private (Admin)
 export const getCommentsManagement = asyncHandler(async (req: Request, res: Response) => {
   const { page = 1, limit = 20, status, postType, postId } = req.query;
+  const pageNum = Math.max(parseInt(page as string, 10) || 1, 1);
+  const limitNum = Math.max(parseInt(limit as string, 10) || 20, 1);
 
   const filter: any = {};
   if (status) filter.status = status;
@@ -463,11 +466,56 @@ export const getCommentsManagement = asyncHandler(async (req: Request, res: Resp
   if (postId) filter.postId = postId;
 
   const comments = await PortfolioComment.find(filter)
-    .populate('postId', 'title')
     .populate('parentComment', 'content')
     .sort({ createdAt: -1 })
-    .limit(parseInt(limit as string) * 1)
-    .skip((parseInt(page as string) - 1) * parseInt(limit as string));
+    .limit(limitNum)
+    .skip((pageNum - 1) * limitNum)
+    .lean();
+
+  const postIdsByType = comments.reduce((acc: Record<string, string[]>, comment: any) => {
+    const type = comment.postType as string;
+    const id = comment.postId?.toString?.() || comment.postId;
+
+    if (!type || !id) return acc;
+    if (!acc[type]) acc[type] = [];
+    acc[type].push(id);
+    return acc;
+  }, {} as Record<string, string[]>);
+
+  const [blogs, projects, experiences] = await Promise.all([
+    postIdsByType.blog?.length
+      ? Blog.find({ _id: { $in: [...new Set(postIdsByType.blog)] } })
+        .select('title slug excerpt status')
+        .lean()
+      : Promise.resolve([]),
+    postIdsByType.project?.length
+      ? Project.find({ _id: { $in: [...new Set(postIdsByType.project)] } })
+        .select('title projectType status link featured')
+        .lean()
+      : Promise.resolve([]),
+    postIdsByType.experience?.length
+      ? Experience.find({ _id: { $in: [...new Set(postIdsByType.experience)] } })
+        .select('company position location employmentType isCurrent startDate endDate companyLogo companyWebsite')
+        .lean()
+      : Promise.resolve([])
+  ]);
+
+  const postMapByType: Record<string, Map<string, any>> = {
+    blog: new Map((blogs as any[]).map(post => [post._id.toString(), post])),
+    project: new Map((projects as any[]).map(post => [post._id.toString(), post])),
+    experience: new Map((experiences as any[]).map(post => [post._id.toString(), post]))
+  };
+
+  const populatedComments = comments.map((comment: any) => {
+    const type = comment.postType as string;
+    const id = comment.postId?.toString?.() || comment.postId;
+    const post = postMapByType[type]?.get(id);
+
+    return {
+      ...comment,
+      postId: post || comment.postId
+    };
+  });
 
   const totalComments = await PortfolioComment.countDocuments(filter);
 
@@ -484,10 +532,10 @@ export const getCommentsManagement = asyncHandler(async (req: Request, res: Resp
   res.json({
     success: true,
     data: {
-      comments,
+      comments: populatedComments,
       pagination: {
-        current: parseInt(page as string),
-        pages: Math.ceil(totalComments / parseInt(limit as string)),
+        current: pageNum,
+        pages: Math.ceil(totalComments / limitNum),
         total: totalComments
       },
       stats: stats.reduce((acc: Record<string, number>, stat: any) => {

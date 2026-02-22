@@ -88,7 +88,7 @@ router.get('/projects/stats', authenticateAdmin, getProjectStats);
 
 // ==================== BLOGS ====================
 router.get('/blogs', authenticateAdmin, getBlogs);
-router.get('/blogs/:id', authenticateAdmin, getBlog);
+router.get('/blogs/:slug', authenticateAdmin, getBlog);
 router.post('/blogs', authenticateAdmin, blogValidations.create, invalidateCache(cachePatterns.blogs), createBlog);
 router.put('/blogs/:id', authenticateAdmin, blogValidations.create, invalidateCache(cachePatterns.blogs), updateBlog);
 router.delete('/blogs/:id', authenticateAdmin, invalidateCache(cachePatterns.blogs), deleteBlog);

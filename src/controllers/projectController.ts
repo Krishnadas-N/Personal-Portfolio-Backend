@@ -12,6 +12,8 @@ export const getProjects = asyncHandler(async (req: Request, res: Response) => {
     type, 
     status, 
     featured, 
+    technology,
+    tech,
     search,
     sort = 'createdAt',
     order = 'desc'
@@ -23,6 +25,8 @@ export const getProjects = asyncHandler(async (req: Request, res: Response) => {
   if (type) query.projectType = type;
   if (status) query.status = status;
   if (featured !== undefined) query.featured = featured === 'true';
+  const techFilter = (technology || tech) as string | undefined;
+  if (techFilter) query.technologies = { $regex: techFilter, $options: 'i' };
   if (search) {
     query.$or = [
       { title: { $regex: search, $options: 'i' } },

@@ -11,16 +11,50 @@ export const getSkills = asyncHandler(async (req: Request, res: Response) => {
     limit = 50, 
     category,
     level,
+    categories,
+    levels,
     search,
     sort = 'name',
     order = 'asc'
   } = req.query;
 
+  const isCategoriesView = categories === 'true' || categories === '1';
+  const isLevelsView = levels === 'true' || levels === '1';
+
+  if (isCategoriesView || isLevelsView) {
+    const [categoryStats, levelStats] = await Promise.all([
+      isCategoriesView
+        ? Skill.aggregate([
+          { $match: { isActive: true } },
+          { $group: { _id: '$category', count: { $sum: 1 } } },
+          { $sort: { count: -1 } }
+        ])
+        : Promise.resolve([]),
+      isLevelsView
+        ? Skill.aggregate([
+          { $match: { isActive: true } },
+          { $group: { _id: '$level', count: { $sum: 1 } } },
+          { $sort: { count: -1 } }
+        ])
+        : Promise.resolve([])
+    ]);
+
+    res.json({
+      success: true,
+      data: isCategoriesView && isLevelsView
+        ? { categories: categoryStats, levels: levelStats }
+        : isCategoriesView
+          ? categoryStats
+          : levelStats
+    });
+    return;
+  }
+
   const query: any = { isActive: true };
 
   // Apply filters
-  if (category) query.category = category;
-  if (level) query.level = level;
+  if (category) query.category = { $regex: category, $options: 'i' };
+  if (level) query.level = { $regex: level, $options: 'i' };
   if (search) {
     query.$or = [
       { name: { $regex: search, $options: 'i' } },

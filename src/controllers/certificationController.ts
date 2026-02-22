@@ -13,11 +13,14 @@ export const getCertifications = asyncHandler(async (req: Request, res: Response
     level,
     issuer,
     search,
+    recent,
     sort = 'issueDate',
     order = 'desc'
   } = req.query;
 
   const query: any = { isActive: true };
+  const pageNum = Math.max(Number(page) || 1, 1);
+  const requestedLimit = Math.max(Number(limit) || 10, 1);
 
   // Apply filters
   if (category) query.category = { $regex: category, $options: 'i' };
@@ -32,17 +35,24 @@ export const getCertifications = asyncHandler(async (req: Request, res: Response
     ];
   }
 
-  // Calculate pagination
-  const skip = (Number(page) - 1) * Number(limit);
-
   // Build sort object
   const sortObj: any = {};
   sortObj[sort as string] = order === 'desc' ? -1 : 1;
 
-  const certifications = await Certification.find(query)
+  const isRecent = recent === 'true' || recent === '1';
+  const effectiveLimit = isRecent && req.query.limit === undefined ? 5 : requestedLimit;
+  const skip = (pageNum - 1) * effectiveLimit;
+
+  let certificationsQuery = Certification.find(query)
     .sort(sortObj)
     .skip(skip)
-    .limit(Number(limit));
+    .limit(effectiveLimit);
+
+  if (isRecent) {
+    certificationsQuery = certificationsQuery.select('name issuer issueDate badgeImage');
+  }
+
+  const certifications = await certificationsQuery;
 
   const total = await Certification.countDocuments(query);
 
@@ -50,10 +60,10 @@ export const getCertifications = asyncHandler(async (req: Request, res: Response
     success: true,
     data: certifications,
     pagination: {
-      current: Number(page),
-      pages: Math.ceil(total / Number(limit)),
+      current: pageNum,
+      pages: Math.ceil(total / effectiveLimit),
       total,
-      limit: Number(limit)
+      limit: effectiveLimit
     }
   });
 });

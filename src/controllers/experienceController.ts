@@ -10,6 +10,7 @@ export const getExperiences = asyncHandler(async (req: Request, res: Response) =
     page = 1, 
     limit = 10, 
     current,
+    company,
     employmentType,
     search,
     sort = 'startDate',
@@ -20,6 +21,7 @@ export const getExperiences = asyncHandler(async (req: Request, res: Response) =
 
   // Apply filters
   if (current !== undefined) query.isCurrent = current === 'true';
+  if (company) query.company = { $regex: company, $options: 'i' };
   if (employmentType) query.employmentType = employmentType;
   if (search) {
     query.$or = [

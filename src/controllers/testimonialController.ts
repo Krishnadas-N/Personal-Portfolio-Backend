@@ -11,6 +11,7 @@ export const getTestimonials = asyncHandler(async (req: Request, res: Response) 
     limit = 10, 
     featured,
     verified,
+    company,
     search,
     sort = 'createdAt',
     order = 'desc'
@@ -21,6 +22,7 @@ export const getTestimonials = asyncHandler(async (req: Request, res: Response) 
   // Apply filters
   if (featured !== undefined) query.isFeatured = featured === 'true';
   if (verified !== undefined) query.verified = verified === 'true';
+  if (company) query.clientCompany = { $regex: company, $options: 'i' };
   if (search) {
     query.$or = [
       { clientName: { $regex: search, $options: 'i' } },

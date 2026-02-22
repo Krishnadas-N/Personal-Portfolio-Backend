@@ -10,6 +10,7 @@ export const getEducation = asyncHandler(async (req: Request, res: Response) => 
     page = 1, 
     limit = 10, 
     current,
+    institution,
     degree,
     search,
     sort = 'startDate',
@@ -20,6 +21,7 @@ export const getEducation = asyncHandler(async (req: Request, res: Response) => 
 
   // Apply filters
   if (current !== undefined) query.isCurrent = current === 'true';
+  if (institution) query.institution = { $regex: institution, $options: 'i' };
   if (degree) query.degree = { $regex: degree, $options: 'i' };
   if (search) {
     query.$or = [
