@@ -19,7 +19,7 @@ export const config = {
     mongoUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/portfolio',
     redisUri: process.env.REDIS_URI || 'redis://localhost:6379',
     connectionTimeout: parseInt(process.env.DB_CONNECTION_TIMEOUT || '30000'),
-    maxPoolSize: parseInt(process.env.DB_MAX_POOL_SIZE || '10')
+    maxPoolSize: parseInt(process.env.DB_MAX_POOL_SIZE || '5')
   },
 
   // Authentication Configuration

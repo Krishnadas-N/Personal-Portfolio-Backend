@@ -5,48 +5,34 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 import cluster from 'cluster';
 import os from 'os';
-import app from './app';
-import { redisClient } from './config/redis';
-import { initializeMonitoring } from './services/monitoring';
 import { logger } from './utils/logger';
 
-if (cluster.isPrimary) {
-  const numCPUs = os.cpus().length;
-  logger.info(`Primary process is running with ${numCPUs} CPUs`);
+const isClusteringEnabled = process.env.ENABLE_CLUSTERING === 'true';
+const requestedWorkers = parseInt(
+  process.env.CLUSTER_WORKERS || process.env.WEB_CONCURRENCY || '1',
+  10
+);
+const workerCount = Number.isNaN(requestedWorkers)
+  ? 1
+  : Math.max(1, Math.min(os.cpus().length, requestedWorkers));
 
-  // Initialize monitoring in primary process
-  initializeMonitoring();
+const startWorker = async () => {
+  const [{ default: app }, { redisClient }, { initializeMonitoring }] = await Promise.all([
+    import('./app'),
+    import('./config/redis'),
+    import('./services/monitoring')
+  ]);
 
-  for (let i = 0; i < numCPUs; i++) {
-    cluster.fork();
+  if (process.env.MONITORING_ENABLED !== 'false') {
+    initializeMonitoring();
   }
-
-  cluster.on('exit', (worker) => {
-    logger.warn(`Worker ${worker.process.pid} died. Forking a new one.`);
-    cluster.fork();
-  });
-
-  // Graceful shutdown for primary process
-  const shutdown = () => {
-    logger.info('Shutting down primary process...');
-    Object.values(cluster.workers || {}).forEach(worker => {
-      worker?.kill();
-    });
-    process.exit(0);
-  };
-
-  process.on('SIGTERM', shutdown);
-  process.on('SIGINT', shutdown);
-} else {
-  // Initialize monitoring in worker process (for local metrics flushing)
-  initializeMonitoring();
 
   const PORT = process.env.PORT || 5000;
   const server = app.listen(PORT, () => {
     logger.info(`Worker ${process.pid} is running on port ${PORT}`);
   });
 
-  // Graceful Shutdown for worker processes
+  // Graceful shutdown for worker processes
   const shutdown = () => {
     logger.info(`Worker ${process.pid} shutting down gracefully...`);
     server.close(() => {
@@ -70,4 +56,41 @@ if (cluster.isPrimary) {
     logger.error(`Worker ${process.pid} unhandled rejection`, { reason, promise });
     process.exit(1);
   });
-}
+};
+
+const start = async () => {
+  if (isClusteringEnabled && cluster.isPrimary) {
+    logger.info(`Primary process is running with ${workerCount} worker(s)`);
+
+    for (let i = 0; i < workerCount; i++) {
+      cluster.fork();
+    }
+
+    cluster.on('exit', (worker) => {
+      logger.warn(`Worker ${worker.process.pid} died. Forking a new one.`);
+      cluster.fork();
+    });
+
+    // Graceful shutdown for primary process
+    const shutdown = () => {
+      logger.info('Shutting down primary process...');
+      Object.values(cluster.workers || {}).forEach(worker => {
+        worker?.kill();
+      });
+      process.exit(0);
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+    return;
+  }
+
+  try {
+    await startWorker();
+  } catch (error) {
+    logger.error('Failed to start server process', error);
+    process.exit(1);
+  }
+};
+
+start();

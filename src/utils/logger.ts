@@ -12,28 +12,47 @@ interface Logger {
 import fs from 'fs';
 import path from 'path';
 
-// Ensure logs directory exists
+const fileLoggingEnabled = process.env.LOG_FILE === 'true';
+const maxLogSizeBytes = parseInt(process.env.MAX_LOG_SIZE_BYTES || `${2 * 1024 * 1024}`, 10);
+const maxLogFiles = parseInt(process.env.MAX_LOG_FILES || '3', 10);
+const maxMetaLength = parseInt(process.env.LOG_META_MAX_LENGTH || '4000', 10);
+
+// Ensure logs directory exists only when file logging is enabled
 const logDir = path.join(process.cwd(), 'logs');
-if (!fs.existsSync(logDir)) {
+if (fileLoggingEnabled && !fs.existsSync(logDir)) {
   fs.mkdirSync(logDir);
 }
 const logFilePath = path.join(logDir, 'app.log');
 
 // Simple logger implementation
 class SimpleLogger implements Logger {
+  private stringifyMeta(meta: any): string {
+    if (!meta) return '';
+
+    try {
+      const serialized = JSON.stringify(meta);
+      if (serialized.length > maxMetaLength) {
+        return ` ${serialized.slice(0, maxMetaLength)}...[truncated]`;
+      }
+      return ` ${serialized}`;
+    } catch {
+      return ' [unserializable meta]';
+    }
+  }
+
   private formatMessage(level: string, message: string, meta?: any): string {
     const timestamp = new Date().toISOString();
-    const metaStr = meta ? ` ${JSON.stringify(meta)}` : '';
+    const metaStr = this.stringifyMeta(meta);
     return `[${timestamp}] ${level.toUpperCase()}: ${message}${metaStr}`;
   }
 
   private checkLogRotation(): void {
     try {
+      if (!fileLoggingEnabled) return;
       if (!fs.existsSync(logFilePath)) return;
 
       const stats = fs.statSync(logFilePath);
-      // 5MB limit
-      if (stats.size < 5 * 1024 * 1024) return;
+      if (stats.size < maxLogSizeBytes) return;
 
       // Rename current file
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -44,7 +63,7 @@ class SimpleLogger implements Logger {
       const files = fs.readdirSync(logDir);
       const logFiles = files.filter(f => f.startsWith('app-') && f.endsWith('.log'));
 
-      if (logFiles.length > 5) {
+      if (logFiles.length > maxLogFiles) {
         // Sort by creation time (stat) to find oldest
         const fileStats = logFiles.map(f => ({
           name: f,
@@ -53,8 +72,8 @@ class SimpleLogger implements Logger {
 
         fileStats.sort((a, b) => a.time - b.time); // Oldest first
 
-        // Delete oldest until we have 5 left
-        const deleteCount = logFiles.length - 5;
+        // Delete oldest until we have maxLogFiles left
+        const deleteCount = logFiles.length - maxLogFiles;
         for (let i = 0; i < deleteCount; i++) {
           fs.unlinkSync(path.join(logDir, fileStats[i].name));
         }
@@ -65,6 +84,8 @@ class SimpleLogger implements Logger {
   }
 
   private writeToFile(message: string): void {
+    if (!fileLoggingEnabled) return;
+
     try {
       this.checkLogRotation();
       fs.appendFileSync(logFilePath, message + '\n');
