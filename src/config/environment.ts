@@ -17,7 +17,7 @@ export const config = {
   // Database Configuration
   database: {
     mongoUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/portfolio',
-    redisUri: process.env.REDIS_URI || 'redis://localhost:6379',
+    redisUri: process.env.REDIS_URI || process.env.REDIS_URL || 'redis://localhost:6379',
     connectionTimeout: parseInt(process.env.DB_CONNECTION_TIMEOUT || '30000'),
     maxPoolSize: parseInt(process.env.DB_MAX_POOL_SIZE || '5')
   },
@@ -80,9 +80,9 @@ export const config = {
     xssProtection: process.env.XSS_PROTECTION !== 'false'
   },
 
-  // Cache Configuration
+  // Cache Configuration (Redis is opt-in; health does not require it)
   cache: {
-    redisEnabled: process.env.REDIS_ENABLED !== 'false',
+    redisEnabled: process.env.REDIS_ENABLED ? process.env.REDIS_ENABLED === 'true' : false,
     defaultTtl: parseInt(process.env.CACHE_DEFAULT_TTL || '3600'), // 1 hour
     longTtl: parseInt(process.env.CACHE_LONG_TTL || '86400'), // 24 hours
     shortTtl: parseInt(process.env.CACHE_SHORT_TTL || '300'), // 5 minutes

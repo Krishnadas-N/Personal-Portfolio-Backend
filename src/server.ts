@@ -17,7 +17,7 @@ const workerCount = Number.isNaN(requestedWorkers)
   : Math.max(1, Math.min(os.cpus().length, requestedWorkers));
 
 const startWorker = async () => {
-  const [{ default: app }, { redisClient }, { initializeMonitoring }] = await Promise.all([
+  const [{ default: app }, { quitRedis }, { initializeMonitoring }] = await Promise.all([
     import('./app'),
     import('./config/redis'),
     import('./services/monitoring')
@@ -35,8 +35,8 @@ const startWorker = async () => {
   // Graceful shutdown for worker processes
   const shutdown = () => {
     logger.info(`Worker ${process.pid} shutting down gracefully...`);
-    server.close(() => {
-      redisClient.quit();
+    server.close(async () => {
+      await quitRedis();
       process.exit(0);
     });
 

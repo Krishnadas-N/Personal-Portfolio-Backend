@@ -9,7 +9,7 @@ import cookieParser from 'cookie-parser';
 import session from 'express-session';
 import hpp from 'hpp';
 import morgan from 'morgan';
-import { redisClient } from './config/redis';
+import { redisClient, isRedisEnabled } from './config/redis';
 import { logger, requestLogger } from './utils/logger';
 import { doubleCsrfProtection } from './services/csrfProtection';
 import routes from './routes/index';
@@ -60,20 +60,25 @@ if (config.analytics.enabled) {
   app.use(analyticsMiddleware.trackGeographicData);
 }
 
-// Session setup
-app.use(
-  session({
-    store: new RedisStore({ client: redisClient }),
-    secret: config.auth.sessionSecret,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: config.server.nodeEnv === 'production',
-      httpOnly: true,
-      maxAge: config.auth.sessionMaxAge,
-    },
-  }) as RequestHandler
-);
+// Session setup — Redis store only when Redis is enabled; otherwise in-memory
+const sessionOptions: session.SessionOptions = {
+  secret: config.auth.sessionSecret,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: config.server.nodeEnv === 'production',
+    httpOnly: true,
+    maxAge: config.auth.sessionMaxAge,
+  },
+};
+
+if (isRedisEnabled && redisClient) {
+  sessionOptions.store = new RedisStore({ client: redisClient as any });
+} else {
+  logger.info('Using in-memory session store (Redis disabled)');
+}
+
+app.use(session(sessionOptions) as RequestHandler);
 
 // CSRF protection
 if (config.security.csrfEnabled) {

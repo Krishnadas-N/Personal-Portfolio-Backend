@@ -114,11 +114,15 @@ describe('Portfolio API Tests', () => {
 
   beforeAll(async () => {
     await connectToDatabase();
-    await redisClient.connect();
+    if (redisClient && !redisClient.isOpen) {
+      await redisClient.connect();
+    }
   });
 
   afterAll(async () => {
-    await redisClient.quit();
+    if (redisClient?.isOpen) {
+      await redisClient.quit();
+    }
   });
 
   beforeEach(async () => {

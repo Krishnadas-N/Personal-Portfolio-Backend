@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { redisClient } from '../config/redis';
+import { redisClient, isRedisEnabled } from '../config/redis';
 import { logger, collectSystemMetrics, healthCheck } from '../utils/logger';
 import cluster from 'cluster';
 
@@ -72,6 +72,14 @@ export class MetricsService {
   }
 
   private async flushMetrics(): Promise<void> {
+    if (!isRedisEnabled || !redisClient) {
+      this.localRequestCount = 0;
+      this.localErrorCount = 0;
+      this.localTotalResponseTime = 0;
+      this.localResponseCount = 0;
+      return;
+    }
+
     if (this.localRequestCount === 0 && this.localErrorCount === 0 && this.localResponseCount === 0) {
         return;
     }
@@ -115,6 +123,10 @@ export class MetricsService {
 
   // Collect application-specific metrics
   private async collectApplicationMetrics(): Promise<void> {
+    if (!isRedisEnabled || !redisClient) {
+      return;
+    }
+
     try {
       const metrics = {
         timestamp: Date.now(),
@@ -145,6 +157,10 @@ export class MetricsService {
 
   // Get cache statistics
   private async getCacheStats(): Promise<any> {
+    if (!isRedisEnabled || !redisClient) {
+      return { enabled: false };
+    }
+
     try {
       const info = await redisClient.info('memory');
       const keyspace = await redisClient.info('keyspace');
@@ -181,6 +197,14 @@ export class MetricsService {
 
   // Get request statistics
   private async getRequestStats(): Promise<any> {
+    if (!isRedisEnabled || !redisClient) {
+      return {
+        totalRequests: this.localRequestCount,
+        errorRequests: this.localErrorCount,
+        avgResponseTime: 0
+      };
+    }
+
     try {
       const stats = {
         totalRequests: await redisClient.get('stats:total_requests') || 0,
@@ -275,6 +299,10 @@ export class AlertService {
 
   // Check error rate
   private async checkErrorRate(): Promise<void> {
+    if (!isRedisEnabled || !redisClient) {
+      return;
+    }
+
     try {
       const totalRequests = await redisClient.get('stats:total_requests') || '0';
       const errorRequests = await redisClient.get('stats:error_requests') || '0';
@@ -297,6 +325,10 @@ export class AlertService {
 
   // Check response time
   private async checkResponseTime(): Promise<void> {
+    if (!isRedisEnabled || !redisClient) {
+      return;
+    }
+
     try {
       const avgResponseTime = await redisClient.get('stats:avg_response_time') || '0';
       
@@ -333,6 +365,13 @@ export class AlertService {
   // Send alert
   private async sendAlert(type: string, data: any): Promise<void> {
     const alertKey = `${type}_${Date.now()}`;
+
+    // Log alert even when Redis is unavailable
+    logger.warn('Alert Triggered', { type, ...data });
+
+    if (!isRedisEnabled || !redisClient) {
+      return;
+    }
     
     // Check if we already sent this alert recently (within 5 minutes)
     const lastAlert = await redisClient.get(`alert:${type}`);
@@ -345,9 +384,6 @@ export class AlertService {
 
     // Store alert
     await redisClient.set(`alert:${type}`, Date.now().toString(), { EX: 300 });
-    
-    // Log alert
-    logger.warn('Alert Triggered', { type, ...data });
     
     // Store alert in Redis for monitoring
     await redisClient.lPush('alerts', JSON.stringify({
@@ -363,6 +399,10 @@ export class AlertService {
 
   // Get recent alerts
   public async getRecentAlerts(limit: number = 10): Promise<any[]> {
+    if (!isRedisEnabled || !redisClient) {
+      return [];
+    }
+
     try {
     const alerts = await redisClient.lRange('alerts', 0, limit - 1) as string[];
     return alerts.map((alert: string) => JSON.parse(alert));
@@ -422,6 +462,19 @@ export const healthCheckEndpoint = async (req: Request, res: Response) => {
 // Metrics endpoint
 export const metricsEndpoint = async (req: Request, res: Response) => {
   try {
+    if (!isRedisEnabled || !redisClient) {
+      const systemMetrics = await collectSystemMetrics();
+      return res.json({
+        success: true,
+        data: {
+          system: systemMetrics,
+          application: null,
+          redis: 'disabled',
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+
     const systemMetrics = await redisClient.get('system:metrics');
     // Aggregate app metrics from all workers if needed, but for now just read basic one or current worker's
     // Since we split keys, we might need to scan or just return basic.

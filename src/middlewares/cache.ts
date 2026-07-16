@@ -1,20 +1,21 @@
 import { Request, Response, NextFunction } from 'express';
-import { redisClient } from '../config/redis';
+import { redisClient, isRedisEnabled } from '../config/redis';
 import config from '../config/environment';
 
 // Cache middleware
 export const cache = (duration: number = config.cache.shortTtl) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     // Only cache GET requests
-    if (req.method !== 'GET' || !config.cache.redisEnabled) {
+    if (req.method !== 'GET' || !isRedisEnabled || !redisClient) {
       return next();
     }
 
+    const client = redisClient;
     const key = `cache:${req.originalUrl}`;
 
     try {
       // Try to get cached data
-      const cachedData = await redisClient.get(key);
+      const cachedData = await client.get(key);
 
       if (cachedData) {
         return res.json(JSON.parse(cachedData));
@@ -27,7 +28,7 @@ export const cache = (duration: number = config.cache.shortTtl) => {
       res.json = function (data: any) {
         // Cache the response
         // Use v4 syntax: set(key, value, { EX: duration })
-        redisClient.set(key, JSON.stringify(data), { EX: duration })
+        client.set(key, JSON.stringify(data), { EX: duration })
           .catch(err => console.error('Redis Cache Error', err));
 
         // Call original json method
@@ -46,7 +47,9 @@ export const cache = (duration: number = config.cache.shortTtl) => {
 export const invalidateCache = (pattern: string) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (!config.cache.redisEnabled) return next();
+      if (!isRedisEnabled || !redisClient) return next();
+
+      const client = redisClient;
 
       // Invalidate cache after successful operations
       const originalJson = res.json;
@@ -61,18 +64,19 @@ export const invalidateCache = (pattern: string) => {
               const keysToDelete: string[] = [];
 
               // Collect keys first
-              for await (const key of redisClient.scanIterator({ MATCH: matchPattern, COUNT: 100 })) {
-                keysToDelete.push(key);
+              for await (const key of client.scanIterator({ MATCH: matchPattern, COUNT: 100 })) {
+                const keyStr = Array.isArray(key) ? key[0] : key;
+                keysToDelete.push(String(keyStr));
                 // Delete in batches of 50 to avoid large payloads
                 if (keysToDelete.length >= 50) {
-                  await redisClient.del(keysToDelete as any);
+                  await client.del(keysToDelete);
                   keysToDelete.length = 0;
                 }
               }
 
               // Delete remaining
               if (keysToDelete.length > 0) {
-                await redisClient.del(keysToDelete as any);
+                await client.del(keysToDelete);
               }
             } catch (e) {
               console.error('Cache invalidation failed', e);

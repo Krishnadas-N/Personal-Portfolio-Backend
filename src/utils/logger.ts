@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { redisClient } from '../config/redis';
+import { redisClient, isRedisEnabled } from '../config/redis';
 
 // Logger interface
 interface Logger {
@@ -202,17 +202,17 @@ export const performanceMonitor = (req: Request, res: Response, next: NextFuncti
       });
     }
 
-    // Store performance metrics in Redis
-    if (process.env.ENABLE_MONITORING === 'true') {
+    // Store performance metrics in Redis (optional)
+    if (process.env.ENABLE_MONITORING === 'true' && isRedisEnabled && redisClient) {
       const key = `perf:${req.method}:${req.url}`;
-      redisClient.lpush(key, JSON.stringify({
+      redisClient.lPush(key, JSON.stringify({
         duration,
         timestamp: Date.now(),
         status: res.statusCode
-      }));
+      })).catch(() => undefined);
 
       // Keep only last 100 entries
-      redisClient.ltrim(key, 0, 99);
+      redisClient.lTrim(key, 0, 99).catch(() => undefined);
     }
   });
 
@@ -233,20 +233,25 @@ export const collectSystemMetrics = async () => {
 
   logger.info('System Metrics', metrics);
 
-  // Store in Redis for monitoring
-  if (process.env.ENABLE_MONITORING === 'true') {
+  // Store in Redis for monitoring (optional)
+  if (process.env.ENABLE_MONITORING === 'true' && isRedisEnabled && redisClient) {
     await redisClient.set('system:metrics', JSON.stringify(metrics), { EX: 300 });
   }
 
   return metrics;
 };
 
-// Health check utilities
+// Health check utilities — Redis is optional and never fails the overall check
 export const healthCheck = async () => {
-  const checks = {
+  const checks: {
+    database: boolean;
+    memory: boolean;
+    redis: boolean | 'disabled';
+    uptime: number;
+  } = {
     database: false,
-    redis: false,
     memory: false,
+    redis: isRedisEnabled ? false : 'disabled',
     uptime: process.uptime()
   };
 
@@ -258,12 +263,14 @@ export const healthCheck = async () => {
     logger.error('Database health check failed', error);
   }
 
-  try {
-    // Check Redis connection
-    const ping = await redisClient.ping();
-    checks.redis = ping === 'PONG';
-  } catch (error) {
-    logger.error('Redis health check failed', error);
+  if (isRedisEnabled && redisClient) {
+    try {
+      const ping = await redisClient.ping();
+      checks.redis = ping === 'PONG';
+    } catch (error) {
+      checks.redis = false;
+      logger.warn('Redis health check failed (non-critical)', error);
+    }
   }
 
   try {
@@ -275,9 +282,8 @@ export const healthCheck = async () => {
     logger.error('Memory health check failed', error);
   }
 
-  const isHealthy = Object.values(checks).every(check =>
-    typeof check === 'boolean' ? check : true
-  );
+  // Only database + memory are required for a healthy service
+  const isHealthy = checks.database && checks.memory;
 
   return {
     healthy: isHealthy,
@@ -292,6 +298,10 @@ export const rateLimitKey = (req: Request): string => {
 };
 
 export const checkRateLimit = async (key: string, limit: number, windowMs: number): Promise<boolean> => {
+  if (!isRedisEnabled || !redisClient) {
+    return true;
+  }
+
   try {
     const current = await redisClient.incr(key);
 
@@ -312,6 +322,10 @@ export const cacheKey = (prefix: string, ...parts: string[]): string => {
 };
 
 export const getCachedData = async (key: string): Promise<any> => {
+  if (!isRedisEnabled || !redisClient) {
+    return null;
+  }
+
   try {
     const data = await redisClient.get(key);
     return data ? JSON.parse(data) : null;
@@ -322,6 +336,10 @@ export const getCachedData = async (key: string): Promise<any> => {
 };
 
 export const setCachedData = async (key: string, data: any, ttl: number = 3600): Promise<void> => {
+  if (!isRedisEnabled || !redisClient) {
+    return;
+  }
+
   try {
     await redisClient.set(key, JSON.stringify(data), { EX: ttl });
   } catch (error) {
@@ -330,6 +348,10 @@ export const setCachedData = async (key: string, data: any, ttl: number = 3600):
 };
 
 export const deleteCachedData = async (pattern: string): Promise<void> => {
+  if (!isRedisEnabled || !redisClient) {
+    return;
+  }
+
   try {
     const keys = await redisClient.keys(pattern);
     if (keys.length > 0) {
